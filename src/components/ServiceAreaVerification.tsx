@@ -784,13 +784,13 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                         {result.division || 'N/A'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.divisionData?.csrCenter || 'N/A'}
+                        {result.serviceRegion || 'N/A'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.divisionData?.franchiseFee ? `${result.divisionData.franchiseFee}%` : 'N/A'}
+                        {result.franchiseFee !== undefined && result.franchiseFee !== null ? `${result.franchiseFee}%` : 'N/A'}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">
-                        {result.status === 'serviceable' ? '' : (result.failureReason || result.reason || 'Unknown reason')}
+                        {result.status === 'serviceable' ? '' : (result.reason || 'Unknown reason')}
                       </td>
                     </tr>
                   ))}
