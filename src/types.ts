@@ -191,3 +191,56 @@ export interface AdditionalFee {
   type: 'fixed' | 'percentage';
   appliesTo?: string;
 }
+
+export interface FranchisedCityPricing {
+  cityName: string;
+  state: string;
+  rates: FranchisedCityRate[];
+}
+
+export interface FranchisedCityRate {
+  containerSize: string;
+  frequency: string;
+  price: number;
+}
+
+export interface ServiceRequest {
+  id: string;
+  companyName: string;
+  address: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  containerSize: string;
+  equipmentType: string;
+  frequency: string;
+  materialType: string;
+  binQuantity: number;
+  division?: string;
+  franchiseFee?: number;
+  addOns?: string[];
+}
+
+export interface Quote {
+  id: string;
+  companyName: string;
+  address: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  containerSize: string;
+  equipmentType: string;
+  frequency: string;
+  materialType: string;
+  binQuantity: number;
+  baseRate: number;
+  franchiseFee: number;
+  tax: number;
+  fuelSurcharge: number;
+  deliveryFee: number;
+  additionalFees: number;
+  totalMonthly: number;
+  totalAnnual: number;
+  division?: string;
+  notes?: string;
+}
