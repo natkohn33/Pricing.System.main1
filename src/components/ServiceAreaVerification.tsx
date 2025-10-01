@@ -5,8 +5,9 @@ import { parseCSV } from '../utils/csvParser';
 import { ServiceAreaValidator } from '../utils/serviceAreaValidator';
 import { geocodeAddress, GeocodingResult } from '../utils/mapboxGeocoding';
 import { FileUpload } from './FileUpload';
-import { MapPin, Upload, CheckCircle, XCircle, AlertTriangle, ArrowRight, Plus, Trash2, ThumbsUp, ThumbsDown, Loader2 } from 'lucide-react';
+import { MapPin, Upload, CheckCircle, XCircle, AlertTriangle, ArrowRight, Plus, Trash2, ThumbsUp, ThumbsDown, Loader2, Database } from 'lucide-react';
 import { CONTAINER_SIZES, FREQUENCY_OPTIONS, EQUIPMENT_TYPES, MATERIAL_TYPES } from '../data/divisions';
+import { VerificationService } from '../services/verificationService';
 
 interface ServiceAreaVerificationProps {
   onVerificationComplete: (verification: ServiceAreaVerificationData) => void;
@@ -17,6 +18,8 @@ interface ServiceAreaVerificationProps {
 export function ServiceAreaVerification({ onVerificationComplete, onContinue, onFileNameUpdate }: ServiceAreaVerificationProps) {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [verificationResults, setVerificationResults] = useState<ServiceAreaVerificationData | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isSavingToDb, setIsSavingToDb] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [showSingleLocationForm, setShowSingleLocationForm] = useState(false);
@@ -149,7 +152,32 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
       return () => clearInterval(retryInterval);
     }
   }, [addressInputRef]);
-  
+
+  // Helper function to save verification results to database
+  const saveVerificationToDatabase = async (verification: ServiceAreaVerificationData, fileName: string) => {
+    setIsSavingToDb(true);
+    try {
+      console.log('💾 Saving verification results to database...');
+      const { sessionId: newSessionId, error } = await VerificationService.saveVerificationSession(
+        fileName,
+        verification
+      );
+
+      if (error) {
+        console.error('❌ Failed to save to database:', error);
+        // Don't block the workflow if database save fails
+        alert('Warning: Failed to save results to database. You can continue with pricing.');
+      } else if (newSessionId) {
+        console.log('✅ Results saved to database. Session ID:', newSessionId);
+        setSessionId(newSessionId);
+      }
+    } catch (error) {
+      console.error('❌ Unexpected error saving to database:', error);
+    } finally {
+      setIsSavingToDb(false);
+    }
+  };
+
   // Get container size options based on equipment type
   const getContainerSizeOptions = () => {
     if (singleLocationData.equipmentType === 'Front-Load Container') {
@@ -304,7 +332,10 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
       
       onVerificationComplete(verification);
       onFileNameUpdate(file.name);
-      
+
+      // Save to database asynchronously
+      saveVerificationToDatabase(verification, file.name);
+
       console.log('🔍 File upload verification completed and callbacks called', {
         verification: verification,
         manualReviewCount: verification.manualReviewCount,
@@ -397,8 +428,12 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
         });
         
         onVerificationComplete(verification);
-        onFileNameUpdate(`Single Location - ${singleLocationData.companyName || 'Unknown'}`);
-        
+        const locationFileName = `Single Location - ${singleLocationData.companyName || 'Unknown'}`;
+        onFileNameUpdate(locationFileName);
+
+        // Save to database asynchronously
+        saveVerificationToDatabase(verification, locationFileName);
+
         console.log('🔍 Single location verification completed and callbacks called', {
           verification: verification,
           manualReviewCount: verification.manualReviewCount,
@@ -540,7 +575,7 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
         {onContinue && (
           <div className="mb-6 p-6 bg-blue-50 border-2 border-blue-600 rounded-lg">
             <div className="flex items-center justify-between">
-              <div>
+              <div className="flex-1">
                 <p className="text-lg font-bold text-gray-900">
                   {verificationResults.manualReviewCount === 0
                     ? '✅ All locations verified!'
@@ -553,6 +588,18 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                     : 'You can review and approve/reject locations below, or continue to pricing setup'
                   }
                 </p>
+                {isSavingToDb && (
+                  <div className="flex items-center mt-2 text-sm text-blue-600">
+                    <Database className="w-4 h-4 mr-2 animate-pulse" />
+                    <span>Saving to database...</span>
+                  </div>
+                )}
+                {sessionId && !isSavingToDb && (
+                  <div className="flex items-center mt-2 text-sm text-green-600">
+                    <Database className="w-4 h-4 mr-2" />
+                    <span>Saved to database (Session: {sessionId.substring(0, 8)}...)</span>
+                  </div>
+                )}
               </div>
               <button
                 type="button"
