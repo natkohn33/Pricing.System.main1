@@ -1,0 +1,17 @@
+division_name,minLng,minLat,maxLng,maxLat,Cities/Areas within Division,Region,Service Region
+Texoma,-97.16885574,33.41900439,-96.36691973,33.89971317,"Sherman, Denison, Gainesville",North Texas (NTX),Open Market
+Justin,-98.02140393,32.73337639,-96.75771805,33.63457366,"Justin, Denton, Flower Mound",North Texas (NTX),Open Market
+Cresson,-98.18680673,31.99526624,-97.36620877,32.97777098,"Cresson, Granbury, Weatherford",North Texas (NTX),Open Market
+Mansfield,-97.43204146,32.37899776,-97.00425976,32.75976257,"Mansfield, Arlington, Burleson",North Texas (NTX),Open Market
+Dallas,-97.12424093,32.3193859,-96.30983386,33.05500375,"Dallas, Garland, Mesquite",North Texas (NTX),Open Market
+Hillsboro,-98.14582479,31.14590028,-96.68372867,32.47570733,"Hillsboro, Waxahachie, Corsicana",Central Texas (CTX),Open Market
+Mexia,-96.92438858,31.01626,-95.62133727,32.01765184,"Mexia, Groesbeck, Fairfield",Central Texas (CTX),Open Market
+Bayou,-95.07853014,29.11474011,-93.96559763,30.26851644,"Baytown, La Porte, Pasadena",South Texas (STX),Open Market
+Dayton,-95.45941502,29.65405731,-94.52898209,30.45752936,"Dayton, Liberty, Cleveland",South Texas (STX),Open Market
+Houston,-95.81383585,29.29406375,-94.99757876,29.7785517,"Houston (eastern parts), Channelview",South Texas (STX),Open Market
+Jersey Village,-95.95455256,29.68984487,-95.36151424,30.24946013,"Jersey Village, Cypress, Tomball",South Texas (STX),Open Market
+Hearne,-96.58602507,31.4980217,-96.47034691,31.55159317,"Hearne, Bryan, College Station",Central Texas (CTX),Open Market
+San Marcos,-98.49039542,29.33723655,-97.28453832,30.50214276,"San Marcos, Kyle, Buda",Central Texas (CTX),Open Market
+San Antonio,-99.13238412,28.77824681,-97.82136507,30.04284588,"San Antonio, New Braunfels, Seguin",Central Texas (CTX),Open Market
+Corpus,-98.34867716,27.1858627,-96.77625553,28.90063375,"Corpus Christi, Kingsville, Robstown",South Texas (STX),Open Market
+McKinney,-96.75868191,33.118834,-96.49333375,33.2774329,"McKinney, Allen, Frisco",North Texas (NTX),Open Market
