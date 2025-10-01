@@ -47,10 +47,16 @@ export function Dashboard() {
   });
 
   const handleServiceAreaVerificationComplete = (verification: ServiceAreaVerificationData) => {
+    console.log('📊 [Dashboard] handleServiceAreaVerificationComplete called:', {
+      totalProcessed: verification.totalProcessed,
+      serviceableCount: verification.serviceableCount,
+      notServiceableCount: verification.notServiceableCount,
+      manualReviewCount: verification.manualReviewCount
+    });
     setServiceAreaVerification(verification);
     // CRITICAL FIX: Ensure pricing engine has access to service area data for proper single location detection
     pricingEngine.setServiceAreaData(verification);
-    console.log('🔧 Service area data set in pricing engine for single location detection:', {
+    console.log('🔧 [Dashboard] Service area data set in pricing engine for single location detection:', {
       totalProcessed: verification.totalProcessed,
       serviceableCount: verification.serviceableCount,
       isSingleLocation: verification.totalProcessed === 1
@@ -58,7 +64,14 @@ export function Dashboard() {
   };
 
   const handleContinueToSetup = () => {
+    console.log('🎯 [Dashboard] handleContinueToSetup called - transitioning to setup step');
+    console.log('🎯 [Dashboard] Current step before change:', currentStep);
+    console.log('🎯 [Dashboard] Service area verification state:', {
+      hasVerification: !!serviceAreaVerification,
+      serviceableCount: serviceAreaVerification?.serviceableCount || 0
+    });
     setCurrentStep('setup');
+    console.log('🎯 [Dashboard] Step transition initiated to: setup');
   };
 
   const handlePricingLogicSet = (logic: PricingLogic) => {
@@ -230,7 +243,10 @@ type DashboardAction =
         {currentStep === 'verification' && (
           <ServiceAreaVerificationComponent
             onVerificationComplete={handleServiceAreaVerificationComplete}
-            onContinue={handleContinueToSetup}
+            onContinue={() => {
+              console.log('🔗 [Dashboard] onContinue prop callback triggered from ServiceAreaVerification');
+              handleContinueToSetup();
+            }}
             onFileNameUpdate={setUploadedFileName}
           />
         )}

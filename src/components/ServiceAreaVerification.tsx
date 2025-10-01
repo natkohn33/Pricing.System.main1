@@ -1102,13 +1102,26 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
 
           {/* Continue Button */}
           {verificationResults.serviceableCount > 0 && (
-            <div className="mt-6 flex justify-end relative z-10">
+            <div className="mt-6 flex justify-end relative z-10" style={{ pointerEvents: 'auto' }}>
               <button
+                type="button"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  console.log('🚀 Continue to Pricing Setup button clicked');
+                  console.log('🚀 [ServiceAreaVerification] Continue to Pricing Setup button clicked');
+                  console.log('🚀 [ServiceAreaVerification] Button event details:', {
+                    target: e.currentTarget,
+                    type: e.type,
+                    timestamp: new Date().toISOString()
+                  });
+                  console.log('🚀 [ServiceAreaVerification] Calling onContinue callback...');
                   onContinue();
+                  console.log('🚀 [ServiceAreaVerification] onContinue callback invoked successfully');
+                }}
+                style={{
+                  pointerEvents: 'auto',
+                  cursor: 'pointer',
+                  zIndex: 9999
                 }}
                 className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors cursor-pointer"
               >
