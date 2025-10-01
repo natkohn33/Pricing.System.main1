@@ -1102,10 +1102,15 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
 
           {/* Continue Button */}
           {verificationResults.serviceableCount > 0 && (
-            <div className="mt-6 flex justify-end">
+            <div className="mt-6 flex justify-end relative z-10">
               <button
-                onClick={onContinue}
-                className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  console.log('🚀 Continue to Pricing Setup button clicked');
+                  onContinue();
+                }}
+                className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors cursor-pointer"
               >
                 Continue to Pricing Setup
                 <ArrowRight className="h-5 w-5 ml-2" />
