@@ -1,7 +1,7 @@
-import { ServiceAreaResult, LocationRequest } from '../types';
-import { detectColumns, detectCSVHeaderRow, parseAddressField, convertStateAbbreviation, normalizeMaterialType, parseServiceRequests } from './csvParser';
+import { type ServiceAreaResult, type LocationRequest } from '../types';
+import { detectColumns, detectCSVHeaderRow, parseServiceRequests } from './csvParser';
 import { isFranchisedCity, getFranchisedCityName, matchFranchisedCity } from './franchisedCityMatcher';
-import { spatialValidator, SpatialValidationResult } from './spatialValidator';
+import { spatialValidator } from './spatialValidator';
 import { CONTAINER_SIZES } from '../data/divisions';
 
 export interface ServiceAreaValidator {
@@ -76,7 +76,7 @@ export class ServiceAreaValidator {
     
     // Handle cases where it's just a number (assume YD)
     const numberMatch = normalized.match(/^(\d+)$/);
-    if (numberMatch) {
+    if (numberMatch && numberMatch[1]) {
       const num = parseInt(numberMatch[1]);
       // Only convert to YD if it's a reasonable container size
       if (num >= 1 && num <= 40) {
@@ -800,13 +800,35 @@ export class ServiceAreaValidator {
       // Extract headers
       const headers = data[headerRowIndex];
       
+      if (!headers || headers.length === 0) {
+        throw new Error('Header row is empty or invalid');
+      }
+      
       // Detect column mapping
       const columnMapping = detectColumns(headers);
       console.log('🗂️ Column mapping detected:', columnMapping);
       
       // Parse service requests using the detected structure
-      const locationRequests = parseServiceRequests(data, columnMapping);
-      console.log('✅ Successfully parsed location requests:', locationRequests.length);
+      const serviceRequests = parseServiceRequests(data, columnMapping);
+      console.log('✅ Successfully parsed service requests:', serviceRequests.length);
+      
+      // Map ServiceRequest to LocationRequest (add missing properties)
+      const locationRequests: LocationRequest[] = serviceRequests.map(request => ({
+        id: request.id,
+        companyName: request.customerName, // Map customerName to companyName
+        address: request.address,
+        city: request.city,
+        state: request.state,
+        zipCode: request.zipCode,
+        equipmentType: request.equipmentType,
+        containerSize: request.containerSize,
+        frequency: request.frequency,
+        materialType: request.materialType,
+        addOns: request.addOns,
+        binQuantity: request.binQuantity,
+        latitude: null, // CSV doesn't include coordinates
+        longitude: null // CSV doesn't include coordinates
+      }));
       
       return locationRequests;
     } catch (error) {
