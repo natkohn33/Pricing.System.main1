@@ -3,6 +3,7 @@ import { PricingLogic, ServiceAreaVerificationData, PricingConfig } from '../typ
 import { PricingEngine } from '../utils/pricingEngine';
 import { ServiceAreaVerification as ServiceAreaVerificationComponent } from './ServiceAreaVerification';
 import { PricingSetup } from './PricingSetup';
+import { ProcessingOptions } from './ProcessingOptions';
 import { QuoteGeneration } from './QuoteGeneration';
 import { Calculator, Settings, BarChart3, Zap, MapPin } from 'lucide-react';
 

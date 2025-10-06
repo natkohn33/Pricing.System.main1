@@ -2,16 +2,36 @@ import React, { useState, useCallback } from 'react';
 import { ServiceAreaVerificationData, ServiceAreaResult } from '../types';
 import { parseExcelFile, isExcelFile } from '../utils/excelParser';
 import { parseCSV } from '../utils/csvParser';
-import { ServiceAreaValidator } from '../utils/serviceAreaValidator';
+import { ServiceAreaValidator, parseLocationRequestsFromData } from '../utils/serviceAreaValidator';
 import { geocodeAddress, GeocodingResult } from '../utils/mapboxGeocoding';
 import { FileUpload } from './FileUpload';
 import { MapPin, Upload, CheckCircle, XCircle, AlertTriangle, ArrowRight, Plus, Trash2, ThumbsUp, ThumbsDown, Loader2 } from 'lucide-react';
 import { CONTAINER_SIZES, FREQUENCY_OPTIONS, EQUIPMENT_TYPES, MATERIAL_TYPES } from '../data/divisions';
 
 interface ServiceAreaVerificationProps {
+  category: 'Lockbar' | 'Caster' | 'Other' | '';
+  customName?: string;
   onVerificationComplete: (verification: ServiceAreaVerificationData) => void;
   onContinue?: () => void;
+  frequency: 'one-time' | 'weekly' | 'monthly' | 'quarterly' | 'annually' | 'per-service-frequency';
+  description?: string;
   onFileNameUpdate: (fileName: string) => void;
+}
+
+export interface ContainerSpecificPricingRule {
+  city?: string;
+  state?: string;
+  equipmentType: string;
+  pricePerYard?: number;
+  largeContainerPricePerYard?: number;
+}
+
+export interface DivisionData {
+  csrCenter: string;
+  serviceRegion: string;
+  franchiseFee: number;
+  salesTax: number;
+  containerSpecificPricingRules: ContainerSpecificPricingRule[];
 }
 
 export function ServiceAreaVerification({ onVerificationComplete, onContinue, onFileNameUpdate }: ServiceAreaVerificationProps) {
@@ -22,8 +42,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
   const [showSingleLocationForm, setShowSingleLocationForm] = useState(false);
   const [autocomplete, setAutocomplete] = useState<google.maps.places.Autocomplete | null>(null);
   const [addressInputRef, setAddressInputRef] = useState<HTMLInputElement | null>(null);
-
-
   
   // Geocoding state
   const [isGeocoding, setIsGeocoding] = useState(false);
@@ -54,7 +72,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
   });
 
   const validator = new ServiceAreaValidator();
-
 
   // Initialize Google Places Autocomplete
   React.useEffect(() => {
@@ -181,8 +198,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
   };
 
   const handleFileUpload = useCallback(async (file: File) => {
-    console.log('📁 FILE UPLOAD STARTED:', { fileName: file.name, fileSize: file.size });
-    
     setUploadedFile(file);
     onFileNameUpdate(file.name);
     
@@ -210,7 +225,7 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
       });
       
       // Parse location requests
-      const locationRequests = validator.parseLocationRequestsFromData(data, file.name);
+      const locationRequests = parseLocationRequestsFromData(data, file.name);
       console.log('📍 Parsed location requests:', locationRequests.length);
       
       // Geocode all addresses before processing
@@ -258,7 +273,7 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
         const request = locationRequests[i];
         setProcessingProgress(50 + Math.round(((i + 1) / locationRequests.length) * 50)); // Second 50% for validation
         
-        const result = await validator.validateLocation(
+        const result = validator.validateLocation(
           request.id,
           request.address,
           request.city,
@@ -289,28 +304,8 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
         results
       };
       
-      console.log('🔍 VERIFICATION COMPLETE - SETTING STATE:', {
-        verification: verification,
-        manualReviewCount: verification.manualReviewCount,
-        aboutToSetVerificationResults: true
-      });
-      
       setVerificationResults(verification);
-      
-      console.log('🔍 CALLING onVerificationComplete callback:', {
-        verification: verification,
-        onVerificationCompleteExists: !!onVerificationComplete
-      });
-      
       onVerificationComplete(verification);
-      onFileNameUpdate(file.name);
-      
-      console.log('🔍 File upload verification completed and callbacks called', {
-        verification: verification,
-        manualReviewCount: verification.manualReviewCount,
-        onVerificationCompleteExists: !!onVerificationComplete,
-        onFileNameUpdateExists: !!onFileNameUpdate
-      });
       
       console.log('✅ Service area verification complete:', {
         total: verification.totalProcessed,
@@ -334,8 +329,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
       return;
     }
 
-    console.log('📍 SINGLE LOCATION SUBMIT STARTED:', singleLocationData);
-
     setIsGeocoding(true);
     
     const processLocation = async () => {
@@ -358,7 +351,7 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
         }
         
         // Validate the location
-        const result = await validator.validateLocation(
+        const result = validator.validateLocation(
           'single-location-1',
           singleLocationData.address,
           singleLocationData.city,
@@ -383,28 +376,9 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
           results: [result]
         };
         
-        console.log('🔍 SINGLE LOCATION VERIFICATION COMPLETE - SETTING STATE:', {
-          verification: verification,
-          manualReviewCount: verification.manualReviewCount,
-          aboutToSetVerificationResults: true
-        });
-        
         setVerificationResults(verification);
-        
-        console.log('🔍 CALLING onVerificationComplete callback for single location:', {
-          verification: verification,
-          onVerificationCompleteExists: !!onVerificationComplete
-        });
-        
         onVerificationComplete(verification);
         onFileNameUpdate(`Single Location - ${singleLocationData.companyName || 'Unknown'}`);
-        
-        console.log('🔍 Single location verification completed and callbacks called', {
-          verification: verification,
-          manualReviewCount: verification.manualReviewCount,
-          onVerificationCompleteExists: !!onVerificationComplete,
-          onFileNameUpdateExists: !!onFileNameUpdate
-        });
         
         console.log('✅ Single location verification complete:', result);
         
@@ -525,59 +499,10 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
   }
 
   if (verificationResults) {
-    console.log('🔍 RENDERING VERIFICATION RESULTS:', {
-      verificationResults: verificationResults,
-      manualReviewCount: verificationResults.manualReviewCount,
-      hasOnContinue: !!onContinue,
-      shouldShowContinueButton: !!onContinue
-    });
-
     const manualReviewResults = verificationResults.results.filter(r => r.status === 'manual-review');
-
+    
     return (
       <div className="max-w-6xl mx-auto p-6">
-        {/* Continue Button - Always shown after verification */}
-        {onContinue && (
-          <div className="mb-6 p-6 bg-blue-50 border-2 border-blue-600 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-lg font-bold text-gray-900">
-                  {verificationResults.manualReviewCount === 0
-                    ? '✅ All locations verified!'
-                    : `⚠️ ${verificationResults.manualReviewCount} location(s) require manual review`
-                  }
-                </p>
-                <p className="text-sm text-gray-600 mt-1">
-                  {verificationResults.manualReviewCount === 0
-                    ? 'Ready to proceed to pricing setup'
-                    : 'You can review and approve/reject locations below, or continue to pricing setup'
-                  }
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={(e) => {
-                  console.log('🔵 Continue to Pricing button clicked!', {
-                    onContinueExists: !!onContinue,
-                    event: e,
-                    timestamp: new Date().toISOString()
-                  });
-                  if (onContinue) {
-                    onContinue();
-                    console.log('🔵 onContinue callback invoked successfully');
-                  } else {
-                    console.error('🔴 onContinue callback is not defined!');
-                  }
-                }}
-                className="px-8 py-4 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors cursor-pointer pointer-events-auto"
-                style={{ pointerEvents: 'auto' }}
-              >
-                Continue to Pricing →
-              </button>
-            </div>
-          </div>
-        )}
-
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           <div className="p-6 border-b border-gray-200">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Service Area Verification Results</h2>
@@ -711,34 +636,13 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                       Status
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Original Address
+                      Company
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Bin Quantity
+                      Address
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Container Size
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Equipment Type
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Material Type
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Service Frequency
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Add-ons/Extras
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Division
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Service Region
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Franchise Fee
+                      Equipment
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Reason
@@ -752,45 +656,26 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                         <div className="flex items-center">
                           {getStatusIcon(result.status)}
                           <span className={`ml-2 inline-flex px-2 py-1 text-xs font-medium rounded-full border ${getStatusColor(result.status)}`}>
-                            {result.status === 'serviceable' ? 'serviceable' : 'not serviceable'}
+                            {result.status.replace('-', ' ')}
                           </span>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {`${result.address}, ${result.city}, ${result.state} ${result.zipCode}`}
+                        {result.companyName || 'Unknown'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.binQuantity || 1}
+                        {result.address}, {result.city}, {result.state} {result.zipCode}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.containerSize || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.equipmentType || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.materialType || 'Solid Waste'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.frequency || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.addOns && result.addOns.length > 0 ? 
-                          (Array.isArray(result.addOns) ? result.addOns.join(', ') : result.addOns) : 
-                          ''
-                        }
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.division || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.serviceRegion || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.franchiseFee !== undefined && result.franchiseFee !== null ? `${result.franchiseFee}%` : 'N/A'}
+                        {result.equipmentType && (
+                          <div>
+                            <div>{result.equipmentType} - {result.containerSize}</div>
+                            <div className="text-xs text-gray-400">{result.frequency}</div>
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">
-                        {result.status === 'serviceable' ? '' : (result.reason || 'Unknown reason')}
+                        {result.reason}
                       </td>
                     </tr>
                   ))}
@@ -799,15 +684,17 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
             </div>
           </div>
 
-
-          {/* Manual Review Optional Message */}
-          {verificationResults.manualReviewCount > 0 && (
-            <div className="p-6 border-t border-gray-200 bg-yellow-50">
-              <div className="flex items-center">
-                <AlertTriangle className="w-5 h-5 text-yellow-600 mr-3" />
-                <p className="text-sm text-yellow-800">
-                  {verificationResults.manualReviewCount} location(s) flagged for manual review. You can approve/reject them above or continue to pricing setup.
-                </p>
+          {/* Continue Button */}
+          {onContinue && verificationResults.manualReviewCount === 0 && (
+            <div className="p-6 border-t border-gray-200">
+              <div className="flex justify-end">
+                <button
+                  onClick={onContinue}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Continue to Pricing
+                  <ArrowRight className="ml-2 w-4 h-4" />
+                </button>
               </div>
             </div>
           )}
@@ -883,8 +770,8 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Upload Location Data</h3>
                 <FileUpload
                   onFileUpload={handleFileUpload}
-                  accept=".csv,.xlsx,.xls"
-                  title="Upload Location Data"
+                  acceptedTypes=".csv,.xlsx,.xls"
+                  maxSize={10}
                   description="Upload a CSV or Excel file with location data including addresses, company names, and service requirements."
                 />
               </div>
@@ -1074,12 +961,11 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                   {/* Bin Quantity */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Bin Quantity
+                      Number of Containers
                     </label>
                     <input
                       type="number"
                       min="1"
-                      max="10"
                       value={singleLocationData.binQuantity}
                       onChange={(e) => setSingleLocationData(prev => ({ ...prev, binQuantity: parseInt(e.target.value) || 1 }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
@@ -1087,10 +973,17 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                   </div>
                 </div>
 
-                <div className="mt-6 flex justify-end">
+                {/* Submit Button */}
+                <div className="mt-6 flex justify-end space-x-3">
+                  <button
+                    onClick={() => setShowSingleLocationForm(false)}
+                    className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Cancel
+                  </button>
                   <button
                     onClick={handleSingleLocationSubmit}
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
                     Verify Location
                   </button>

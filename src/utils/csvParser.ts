@@ -1,35 +1,6 @@
-import type { RegionalRateSheet, RegionalRateEntry, RegionalPricingData } from '../types';
+import { RateData, ServiceRequest } from '../types';
 
-// Local type definitions for CSV parsing
-interface RateData {
-  id: string;
-  city: string;
-  state: string;
-  equipmentType: string;
-  containerSize: string;
-  frequency: string;
-  baseRate: number;
-  franchiseFee: number;
-  localTax: number;
-  fuelSurcharge: number;
-  division: string;
-}
-
-interface ServiceRequest {
-  id: string;
-  customerName: string;
-  address: string;
-  city: string;
-  state: string;
-  equipmentType: string;
-  containerSize: string;
-  frequency: string;
-  materialType: string;
-  zipCode: string;
-  addOns: string[];
-  notes: string;
-  binQuantity: number;
-}
+import { RegionalRateSheet, RegionalRateEntry, RegionalPricingData } from '../types';
 
 export function parseCSV(csvText: string): string[][] {
   const lines = csvText.trim().split('\n');
@@ -56,34 +27,6 @@ export function parseCSV(csvText: string): string[][] {
   });
   
   return allRows;
-}
-
-/**
- * Parse CSV with automatic header detection
- * Returns the headers and data rows separately
- */
-export function parseCSVWithHeaderDetection(csvText: string): { headers: string[]; data: string[][] } {
-  const allRows = parseCSV(csvText);
-  
-  if (allRows.length === 0) {
-    return { headers: [], data: [] };
-  }
-  
-  // Detect which row is the header
-  const headerRowIndex = detectCSVHeaderRow(allRows);
-  
-  // Extract headers and data
-  const headers = allRows[headerRowIndex] || [];
-  const data = allRows.slice(headerRowIndex + 1);
-  
-  console.log('📊 CSV parsed with header detection:', {
-    totalRows: allRows.length,
-    headerRowIndex,
-    headers,
-    dataRows: data.length
-  });
-  
-  return { headers, data };
 }
 
 /**
@@ -198,7 +141,7 @@ export function detectColumns(headers: string[]): Record<string, number> {
     if (normalizedHeader === 'city' || 
         normalizedHeader === 'cityname' || 
         normalizedHeader === 'cityname') {
-      columnMap['city'] = index;
+      columnMap.city = index;
       console.log(`✅ City column detected at index ${index}`);
     }
     
@@ -206,7 +149,7 @@ export function detectColumns(headers: string[]): Record<string, number> {
     if (normalizedHeader === 'state' || 
         normalizedHeader === 'stateorprovince' || 
         normalizedHeader === 'st') {
-      columnMap['state'] = index;
+      columnMap.state = index;
       console.log(`✅ State column detected at index ${index}`);
     }
     
@@ -219,7 +162,7 @@ export function detectColumns(headers: string[]): Record<string, number> {
         normalizedHeader === 'street' ||
         normalizedHeader === 'locationaddress' ||
         normalizedHeader === 'location') {
-      columnMap['address'] = index;
+      columnMap.address = index;
       console.log(`✅ Address column detected at index ${index}`);
     }
     
@@ -230,7 +173,7 @@ export function detectColumns(headers: string[]): Record<string, number> {
         normalizedHeader === 'postal' ||
         normalizedHeader === 'zipcode4' ||
         normalizedHeader === 'zipcode+4') {
-      columnMap['zipCode'] = index;
+      columnMap.zipCode = index;
       console.log(`✅ Zip code column detected at index ${index}`);
     }
     
@@ -239,7 +182,7 @@ export function detectColumns(headers: string[]): Record<string, number> {
         normalizedHeader === 'containertype' || normalizedHeader === 'servicetype' ||
         normalizedHeader === 'wastetype' || normalizedHeader === 'dumpstertype' ||
         normalizedHeader === 'removaltype') {
-      columnMap['equipmentType'] = index;
+      columnMap.equipmentType = index;
       console.log(`✅ Equipment type column detected at index ${index}`);
     }
     
@@ -247,7 +190,7 @@ export function detectColumns(headers: string[]): Record<string, number> {
     if ((normalizedHeader.includes('container') && normalizedHeader.includes('size')) || 
         normalizedHeader === 'containersize' || normalizedHeader === 'binsize' ||
         normalizedHeader === 'yardsize' || normalizedHeader === 'size') {
-      columnMap['containerSize'] = index;
+      columnMap.containerSize = index;
       console.log(`✅ Container size column detected at index ${index}`);
     }
     
@@ -259,7 +202,7 @@ export function detectColumns(headers: string[]): Record<string, number> {
         normalizedHeader === 'pickupsperweek' || normalizedHeader === 'pickups' ||
         normalizedHeader === 'weeklyfrequency' || normalizedHeader === 'timesperweek' ||
         normalizedHeader === 'freq') {
-      columnMap['frequency'] = index;
+      columnMap.frequency = index;
       console.log(`✅ Frequency column detected at index ${index} with header "${header}"`);
     }
     
@@ -267,7 +210,7 @@ export function detectColumns(headers: string[]): Record<string, number> {
     if (normalizedHeader === 'quantity' || normalizedHeader === 'containerquantity' ||
         normalizedHeader === 'binquantity' || normalizedHeader === 'numberofbins' ||
         normalizedHeader === 'numberofcontainers' || normalizedHeader === 'qty') {
-      columnMap['binQuantity'] = index;
+      columnMap.binQuantity = index;
       console.log(`✅ Bin quantity column detected at index ${index}`);
     }
     
@@ -275,24 +218,24 @@ export function detectColumns(headers: string[]): Record<string, number> {
     if (normalizedHeader === 'bins' || normalizedHeader === 'containers' ||
         normalizedHeader === 'count' || normalizedHeader === 'units' ||
         normalizedHeader === 'bincount' || normalizedHeader === 'containercount') {
-      columnMap['binQuantity'] = index;
+      columnMap.binQuantity = index;
       console.log(`✅ Bin quantity column (alternative) detected at index ${index}`);
     }
     
-    if (normalizedHeader.includes('base') && normalizedHeader.includes('rate')) columnMap['baseRate'] = index;
-    if (normalizedHeader.includes('franchise')) columnMap['franchiseFee'] = index;
-    if (normalizedHeader.includes('tax')) columnMap['localTax'] = index;
-    if (normalizedHeader.includes('fuel')) columnMap['fuelSurcharge'] = index;
-    if (normalizedHeader.includes('division')) columnMap['division'] = index;
-    if (normalizedHeader.includes('customer') && normalizedHeader.includes('name')) columnMap['customerName'] = index;
-    if (normalizedHeader.includes('material')) columnMap['materialType'] = index;
+    if (normalizedHeader.includes('base') && normalizedHeader.includes('rate')) columnMap.baseRate = index;
+    if (normalizedHeader.includes('franchise')) columnMap.franchiseFee = index;
+    if (normalizedHeader.includes('tax')) columnMap.localTax = index;
+    if (normalizedHeader.includes('fuel')) columnMap.fuelSurcharge = index;
+    if (normalizedHeader.includes('division')) columnMap.division = index;
+    if (normalizedHeader.includes('customer') && normalizedHeader.includes('name')) columnMap.customerName = index;
+    if (normalizedHeader.includes('material')) columnMap.materialType = index;
     
     // Add-ons detection
     if (normalizedHeader.includes('addon') || normalizedHeader.includes('extra') || 
-        normalizedHeader.includes('lockbar') || normalizedHeader.includes('lock')) columnMap['addOns'] = index;
+        normalizedHeader.includes('lockbar') || normalizedHeader.includes('lock')) columnMap.addOns = index;
     
     // Notes detection
-    if (normalizedHeader.includes('note') || normalizedHeader.includes('comment')) columnMap['notes'] = index;
+    if (normalizedHeader.includes('note') || normalizedHeader.includes('comment')) columnMap.notes = index;
     
     // Enhanced material type detection - prioritize specific material type keywords
     if (normalizedHeader === 'materialtype' || normalizedHeader === 'material' ||
@@ -301,25 +244,25 @@ export function detectColumns(headers: string[]): Record<string, number> {
         normalizedHeader === 'singlestream' || normalizedHeader === 'occ' ||
         normalizedHeader === 'cardboard' || normalizedHeader === 'recyclable' ||
         normalizedHeader === 'wastestream' || normalizedHeader === 'materialstream') {
-      columnMap['materialType'] = index;
+      columnMap.materialType = index;
       console.log('🎯 Material type column detected:', header, 'at index', index);
     }
     
     // Fallback material type detection - only if no specific match found
-    if (!columnMap['materialType'] && 
+    if (!columnMap.materialType && 
         (normalizedHeader.includes('material') || normalizedHeader.includes('waste') || 
          normalizedHeader.includes('product') || normalizedHeader.includes('stream') ||
          normalizedHeader.includes('type'))) {
       // Only assign if this looks like a material type column and we haven't found one yet
       if (normalizedHeader.length <= 15) { // Avoid very long headers that might not be material type
-        columnMap['materialType'] = index;
+        columnMap.materialType = index;
         console.log('🔄 Fallback material type column detected:', header, 'at index', index);
       }
     }
   });
   
   console.log('📊 Final column mapping:', columnMap);
-  console.log('🎯 Frequency column mapped to index:', columnMap['frequency'], '(should be 7 for column H)');
+  console.log('🎯 Frequency column mapped to index:', columnMap.frequency, '(should be 7 for column H)');
   
   return columnMap;
 }
@@ -327,66 +270,35 @@ export function detectColumns(headers: string[]): Record<string, number> {
 export function parseRateData(csvData: string[][], columnMap: Record<string, number>): RateData[] {
   return csvData.slice(1).map((row, index) => ({
     id: `rate-${index}`,
-    city: columnMap['city'] !== undefined ? row[columnMap['city']] || '' : '',
-    state: columnMap['state'] !== undefined ? row[columnMap['state']] || 'TX' : 'TX',
-    equipmentType: columnMap['equipmentType'] !== undefined ? row[columnMap['equipmentType']] || '' : '',
-    containerSize: normalizeContainerSize(
-      columnMap['containerSize'] !== undefined ? row[columnMap['containerSize']] || '' : ''
-    ),
-    frequency: normalizeFrequency(
-      columnMap['frequency'] !== undefined ? row[columnMap['frequency']] || '' : ''
-    ),
-    baseRate: columnMap['baseRate'] !== undefined ? parseFloat(row[columnMap['baseRate']] || '0') || 0 : 0,
-    franchiseFee: columnMap['franchiseFee'] !== undefined ? parseFloat(row[columnMap['franchiseFee']] || '0') || 0 : 0,
-    localTax: columnMap['localTax'] !== undefined ? parseFloat(row[columnMap['localTax']] || '0') || 0 : 0,
-    fuelSurcharge: columnMap['fuelSurcharge'] !== undefined ? parseFloat(row[columnMap['fuelSurcharge']] || '0') || 0 : 0,
-    division: columnMap['division'] !== undefined ? row[columnMap['division']] || '' : ''
+    city: row[columnMap.city] || '',
+    state: row[columnMap.state] || 'TX',
+    equipmentType: row[columnMap.equipmentType] || '',
+    containerSize: normalizeContainerSize(row[columnMap.containerSize] || ''),
+    frequency: normalizeFrequency(row[columnMap.frequency] || ''),
+    baseRate: parseFloat(row[columnMap.baseRate]) || 0,
+    franchiseFee: parseFloat(row[columnMap.franchiseFee]) || 0,
+    localTax: parseFloat(row[columnMap.localTax]) || 0,
+    fuelSurcharge: parseFloat(row[columnMap.fuelSurcharge]) || 0,
+    division: row[columnMap.division] || ''
   }));
 }
 
 export function parseServiceRequests(csvData: string[][], columnMap: Record<string, number>): ServiceRequest[] {
-  return csvData.slice(1).map((row, index) => {
-    const addressColIdx = columnMap['address'];
-    const cityColIdx = columnMap['city'];
-    const stateColIdx = columnMap['state'];
-    const zipColIdx = columnMap['zipCode'];
-    const binQuantityColIdx = columnMap['binQuantity'];
-    
-    const addressField = addressColIdx !== undefined ? row[addressColIdx] || '' : '';
-    const parsedAddress = parseAddressField(addressField);
-    const binQtyValue = binQuantityColIdx !== undefined && binQuantityColIdx >= 0 ? row[binQuantityColIdx] : undefined;
-    const addOnsValue = columnMap['addOns'] !== undefined ? row[columnMap['addOns']] : undefined;
-    
-    return {
-      id: `request-${index}`,
-      customerName: (columnMap['customerName'] !== undefined ? row[columnMap['customerName']] : undefined) || 
-                    (columnMap['companyName'] !== undefined ? row[columnMap['companyName']] : undefined) || 
-                    `Customer ${index + 1}`,
-      address: parsedAddress.streetAddress || addressField || '',
-      city: parsedAddress.city || (cityColIdx !== undefined ? row[cityColIdx] || '' : ''),
-      state: convertStateAbbreviation(
-        parsedAddress.state || 
-        (stateColIdx !== undefined ? row[stateColIdx] || '' : '') || 
-        'TX'
-      ),
-      equipmentType: columnMap['equipmentType'] !== undefined ? row[columnMap['equipmentType']] || '' : '',
-      containerSize: normalizeContainerSize(
-        columnMap['containerSize'] !== undefined ? row[columnMap['containerSize']] || '' : ''
-      ),
-      frequency: normalizeFrequency(
-        columnMap['frequency'] !== undefined ? row[columnMap['frequency']] || '' : ''
-      ),
-      materialType: normalizeMaterialType(
-        columnMap['materialType'] !== undefined ? row[columnMap['materialType']] || 'Solid Waste' : 'Solid Waste'
-      ),
-      zipCode: parsedAddress.zipCode || (zipColIdx !== undefined ? row[zipColIdx] || '' : ''),
-      addOns: addOnsValue && addOnsValue.trim() !== '' 
-        ? addOnsValue.split(',').map(s => s.trim()) 
-        : [],
-      notes: columnMap['notes'] !== undefined ? row[columnMap['notes']] || '' : '',
-      binQuantity: binQtyValue !== undefined ? parseInt(String(binQtyValue)) || 1 : 1
-    };
-  });
+  return csvData.slice(1).map((row, index) => ({
+    id: `request-${index}`,
+    customerName: row[columnMap.customerName] || row[columnMap.companyName] || `Customer ${index + 1}`,
+    address: parseAddressField(row[columnMap.address] || '').streetAddress || row[columnMap.address] || '',
+    city: parseAddressField(row[columnMap.address] || '').city || row[columnMap.city] || '',
+    state: convertStateAbbreviation(parseAddressField(row[columnMap.address] || '').state || row[columnMap.state] || 'TX'),
+    equipmentType: row[columnMap.equipmentType] || '',
+    containerSize: normalizeContainerSize(row[columnMap.containerSize] || ''),
+    frequency: normalizeFrequency(row[columnMap.frequency] || ''),
+    materialType: normalizeMaterialType(row[columnMap.materialType] || 'Solid Waste'),
+    zipCode: parseAddressField(row[columnMap.address] || '').zipCode || row[columnMap.zipCode] || '',
+    addOns: row[columnMap.addOns] ? row[columnMap.addOns].split(',').map(s => s.trim()) : [],
+    notes: row[columnMap.notes] || '',
+    binQuantity: columnMap.binQuantity >= 0 ? parseInt(row[columnMap.binQuantity]) || 1 : 1
+  }));
 }
 
 export function normalizeContainerSize(size: string): string {
@@ -474,7 +386,7 @@ function normalizeFrequency(frequency: string): string {
   }
   
   // Handle decimal frequencies like 0.5x/week
-  const decimalMatch = frequency.match(/(0\.5|\.5)x?\/week/i);
+  const decimalMatch = frequency.match(/(0\.5|\.\5)x?\/week/i);
   if (decimalMatch) {
     console.log('✅ Decimal frequency match found:', frequency, '-> 0.5x/week');
     return '0.5x/week';
@@ -496,7 +408,7 @@ function normalizeFrequency(frequency: string): string {
   
   if (lower.includes('week')) {
     const match = lower.match(/(\d+)/);
-    const times = match && match[1] ? parseInt(match[1]) : 1;
+    const times = match ? parseInt(match[1]) : 1;
     const result = `${times}x/week`;
     console.log('✅ Weekly frequency parsed:', frequency, '->', result);
     return result;
@@ -504,7 +416,7 @@ function normalizeFrequency(frequency: string): string {
   
   if (lower.includes('month')) {
     const match = lower.match(/(\d+)/);
-    const times = match && match[1] ? parseInt(match[1]) : 1;
+    const times = match ? parseInt(match[1]) : 1;
     const result = `${times}x/month`;
     console.log('✅ Monthly frequency parsed:', frequency, '->', result);
     return result;
@@ -585,7 +497,7 @@ function splitStreetAndCity(addressPart: string): { streetAddress: string; city:
   if (trimmed.includes(',')) {
     const parts = trimmed.split(',').map(part => part.trim());
     if (parts.length >= 2) {
-      const city = parts[parts.length - 1] || ''; // Last part is city
+      const city = parts[parts.length - 1]; // Last part is city
       const streetAddress = parts.slice(0, -1).join(', '); // Everything else is street
       
       console.log('🏙️ Split by comma:', { streetAddress, city });
@@ -613,7 +525,7 @@ function splitStreetAndCity(addressPart: string): { streetAddress: string; city:
     }
     
     // Default: last word is city
-    const city = words[words.length - 1] || '';
+    const city = words[words.length - 1];
     const streetAddress = words.slice(0, -1).join(' ');
     console.log('🏙️ Split by single-word city heuristic:', { streetAddress, city });
     return { streetAddress, city };
@@ -647,7 +559,7 @@ export function parseAddressField(address: string): {
   
   // ENHANCED: Look for the rightmost valid City, State ZIP pattern, ignoring trailing data
   // This regex captures: [City], [State] [ZIP] and ignores anything after the ZIP
-  const addressPattern = /(.+?)\s*,?\s*([A-Z]{2}|Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming|District of Columbia)\s+(\d{5}(?:-\d{4,4})?)/i;
+  const addressPattern = /(.+?)\s*,?\s*([A-Z]{2}|Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming|District of Columbia)\s+(\d{5}(?:-\d{4})?)/i;
   
   console.log('🔍 Testing regex pattern against address...');
   const match = trimmedAddress.match(addressPattern);
@@ -668,11 +580,8 @@ export function parseAddressField(address: string): {
     return { streetAddress: trimmedAddress, city: '', state: '', zipCode: '' };
   }
   
-  const beforeState = match[1] || '';
-  const stateRaw = match[2] || '';
-  const zipCodeMatch = match[3] || '';
+  const [, beforeState, stateRaw, zipCode] = match;
   const state = convertStateToAbbreviation(stateRaw.trim());
-  const zipCode = zipCodeMatch;
   
   console.log('📍 Address pattern matched:', {
     beforeState: beforeState.trim(),
@@ -770,7 +679,7 @@ export function parseRegionalRateSheets(csvText: string): RegionalPricingData {
   let isInDataSection = false;
   
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]?.trim();
+    const line = lines[i].trim();
     
     // Skip empty lines
     if (!line) {
@@ -794,7 +703,7 @@ export function parseRegionalRateSheets(csvText: string): RegionalPricingData {
     console.log(`📋 Parsed cells:`, cells);
     
     // Detect region headers
-    const firstCell = (cells[0] || '').toLowerCase();
+    const firstCell = cells[0].toLowerCase();
     
     if (firstCell.includes('ntx') || firstCell.includes('dallas') || firstCell.includes('fort worth')) {
       currentRegion = 'NTX';
