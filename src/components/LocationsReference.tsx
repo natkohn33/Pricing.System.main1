@@ -1,7 +1,7 @@
 import React from 'react';
 import { MapPin, CheckCircle, XCircle } from 'lucide-react';
 
-export function LocationsReference({ serviceable, nonServiceable }) {
+export function LocationsReference({ serviceable = [], nonServiceable = [] }) {
   return (
     <div className="bg-white shadow-md rounded-lg p-6 border border-gray-200">
       <h3 className="text-xl font-semibold text-gray-800 flex items-center mb-4">
