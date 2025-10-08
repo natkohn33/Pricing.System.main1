@@ -836,8 +836,7 @@ export function ServiceAreaVerification({
               )}
             </div>
           )}
-        </div>
-      )}
+        
     </div>
   );
 }
