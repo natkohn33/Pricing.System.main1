@@ -664,9 +664,7 @@ export function CustomPricingForm({
               </div>
             </div>
           </div>
-          }
-  };
-
+  
       {/* Bulk Upload Workflow */}
       {!isSingleLocation && (
         <div className="space-y-6">
