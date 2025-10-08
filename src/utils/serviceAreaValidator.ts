@@ -1,9 +1,8 @@
-import { ServiceAreaResult, LocationRequest } from '../types';
-import { detectColumns, detectCSVHeaderRow, parseAddressField, convertStateAbbreviation, normalizeMaterialType } from './csvParser';
+import { type ServiceAreaResult, type LocationRequest } from '../types';
+import { detectColumns, detectCSVHeaderRow, parseServiceRequests } from './csvParser';
 import { isFranchisedCity, getFranchisedCityName, matchFranchisedCity } from './franchisedCityMatcher';
-import { spatialValidator, SpatialValidationResult } from './spatialValidator';
+import { spatialValidator } from './spatialValidator';
 import { CONTAINER_SIZES } from '../data/divisions';
-import { LocationRequest } from '../types';
 
 export interface ServiceAreaValidator {
   validateLocation(
@@ -21,7 +20,7 @@ export interface ServiceAreaValidator {
     materialType: string,
     addOns: string[],
     binQuantity: number
-  ): ServiceAreaResult;
+  ): Promise<ServiceAreaResult>;
 }
 
 export class ServiceAreaValidator {
@@ -77,7 +76,7 @@ export class ServiceAreaValidator {
     
     // Handle cases where it's just a number (assume YD)
     const numberMatch = normalized.match(/^(\d+)$/);
-    if (numberMatch) {
+    if (numberMatch && numberMatch[1]) {
       const num = parseInt(numberMatch[1]);
       // Only convert to YD if it's a reasonable container size
       if (num >= 1 && num <= 40) {
@@ -176,13 +175,10 @@ export class ServiceAreaValidator {
         latitude,
         longitude,
         status: 'not-serviceable',
-        failureReason: `${city}, ${state} is not in our service area`,
-        divisionData: {
-          csrCenter: 'Not Serviceable',
-          serviceRegion: 'Not Serviceable',
-          franchiseFee: cityFranchiseFee,
-          salesTax: citySalesTax
-        }
+        reason: `${city}, ${state} is not in our service area`,
+        division: 'Not Serviceable',
+        serviceRegion: 'Not Serviceable',
+        franchiseFee: cityFranchiseFee
       };
     }
 
@@ -224,13 +220,10 @@ export class ServiceAreaValidator {
           latitude,
           longitude,
           status: 'not-serviceable',
-          failureReason: `Front-load containers are not serviceable in ${city}, ${state}`,
-          divisionData: {
-            csrCenter: 'Not Serviceable',
-            serviceRegion: 'Not Serviceable',
-            franchiseFee: cityFranchiseFee,
-            salesTax: citySalesTax
-          }
+          reason: `Front-load containers are not serviceable in ${city}, ${state}`,
+          division: 'Not Serviceable',
+          serviceRegion: 'Not Serviceable',
+          franchiseFee: cityFranchiseFee
         };
       }
     }
@@ -294,15 +287,10 @@ export class ServiceAreaValidator {
               latitude,
               longitude,
               status: 'manual-review',
-              reason: 'Container size flagged for manual review',
-              failureReason: `Container size "${containerSize}" is not recognized and requires manual review`,
+              reason: `Container size "${containerSize}" is not recognized and requires manual review`,
               division: spatialResult.division,
-              divisionData: {
-                csrCenter: spatialResult.csrCenter || spatialResult.division || 'Unknown',
-                serviceRegion: spatialResult.serviceRegion || 'Open Market',
-                franchiseFee: cityFranchiseFee,
-                salesTax: citySalesTax
-              }
+              serviceRegion: spatialResult.serviceRegion || 'Open Market',
+              franchiseFee: cityFranchiseFee
             };
           }
 
@@ -322,13 +310,10 @@ export class ServiceAreaValidator {
             latitude,
             longitude,
             status: 'serviceable',
+            reason: '',
             division: spatialResult.division,
-            divisionData: {
-              csrCenter: spatialResult.csrCenter || spatialResult.division || 'Unknown',
-              serviceRegion: spatialResult.serviceRegion || 'Open Market',
-              franchiseFee: cityFranchiseFee,
-              salesTax: citySalesTax
-            }
+            serviceRegion: spatialResult.serviceRegion || 'Open Market',
+            franchiseFee: cityFranchiseFee
           };
         } else {
           console.log('❌ SPATIAL VALIDATION: Location is NOT serviceable', {
@@ -373,15 +358,10 @@ export class ServiceAreaValidator {
                 latitude,
                 longitude,
                 status: 'manual-review',
-                reason: 'Container size flagged for manual review',
-                failureReason: `Container size "${containerSize}" is not recognized and requires manual review`,
+                reason: `Container size "${containerSize}" is not recognized and requires manual review`,
                 division: 'CTX',
-                divisionData: {
-                  csrCenter: 'CTX',
-                  serviceRegion: 'Open Market',
-                  franchiseFee: cityFranchiseFee,
-                  salesTax: citySalesTax
-                }
+                serviceRegion: 'Open Market',
+                franchiseFee: cityFranchiseFee
               };
             }
             
@@ -401,13 +381,10 @@ export class ServiceAreaValidator {
               latitude,
               longitude,
               status: 'serviceable',
+              reason: '',
               division: 'CTX',
-              divisionData: {
-                csrCenter: 'CTX',
-                serviceRegion: 'Open Market',
-                franchiseFee: cityFranchiseFee,
-                salesTax: citySalesTax
-              }
+              serviceRegion: 'Open Market',
+              franchiseFee: cityFranchiseFee
             };
           }
 
@@ -427,13 +404,10 @@ export class ServiceAreaValidator {
             latitude,
             longitude,
             status: 'not-serviceable',
-            failureReason: `Location coordinates [${latitude.toFixed(4)}, ${longitude.toFixed(4)}] fall outside all defined service areas`,
-            divisionData: {
-              csrCenter: 'Not Serviceable',
-              serviceRegion: 'Not Serviceable',
-              franchiseFee: cityFranchiseFee,
-              salesTax: citySalesTax
-            }
+            reason: `Location coordinates [${latitude.toFixed(4)}, ${longitude.toFixed(4)}] fall outside all defined service areas`,
+            division: 'Not Serviceable',
+            serviceRegion: 'Not Serviceable',
+            franchiseFee: cityFranchiseFee
           };
         }
       } catch (error) {
@@ -476,15 +450,10 @@ export class ServiceAreaValidator {
               latitude,
               longitude,
               status: 'manual-review',
-              reason: 'Container size flagged for manual review',
-              failureReason: `Container size "${containerSize}" is not recognized and requires manual review`,
+              reason: `Container size "${containerSize}" is not recognized and requires manual review`,
               division: 'CTX',
-              divisionData: {
-                csrCenter: 'CTX',
-                serviceRegion: 'Open Market',
-                franchiseFee: cityFranchiseFee,
-                salesTax: citySalesTax
-              }
+              serviceRegion: 'Open Market',
+              franchiseFee: cityFranchiseFee
             };
           }
           
@@ -504,13 +473,10 @@ export class ServiceAreaValidator {
             latitude,
             longitude,
             status: 'serviceable',
+            reason: '',
             division: 'CTX',
-            divisionData: {
-              csrCenter: 'CTX',
-              serviceRegion: 'Open Market',
-              franchiseFee: cityFranchiseFee,
-              salesTax: citySalesTax
-            }
+            serviceRegion: 'Open Market',
+            franchiseFee: cityFranchiseFee
           };
         }
         
@@ -566,15 +532,10 @@ export class ServiceAreaValidator {
           latitude,
           longitude,
           status: 'manual-review',
-          reason: 'Container size flagged for manual review',
-          failureReason: `Container size "${containerSize}" is not recognized and requires manual review`,
+          reason: `Container size "${containerSize}" is not recognized and requires manual review`,
           division: `${franchisedCityName} (Municipal Contract)`,
-          divisionData: {
-            csrCenter: 'Municipal Contract',
-            serviceRegion: `${franchisedCityName} Municipal`,
-            franchiseFee: cityFranchiseFee,
-            salesTax: citySalesTax
-          }
+          serviceRegion: `${franchisedCityName} Municipal`,
+          franchiseFee: cityFranchiseFee
         };
       }
       
@@ -594,13 +555,10 @@ export class ServiceAreaValidator {
         latitude,
         longitude,
         status: 'serviceable',
+        reason: '',
         division: `${franchisedCityName} (Municipal Contract)`,
-        divisionData: {
-          csrCenter: 'Municipal Contract',
-          serviceRegion: `${franchisedCityName} Municipal`,
-          franchiseFee: cityFranchiseFee,
-          salesTax: citySalesTax
-        }
+        serviceRegion: `${franchisedCityName} Municipal`,
+        franchiseFee: cityFranchiseFee
       };
     }
 
@@ -651,15 +609,10 @@ export class ServiceAreaValidator {
           latitude,
           longitude,
           status: 'manual-review',
-          reason: 'Container size flagged for manual review',
-          failureReason: `Container size "${containerSize}" is not recognized and requires manual review`,
+          reason: `Container size "${containerSize}" is not recognized and requires manual review`,
           division,
-          divisionData: {
-            csrCenter: division,
-            serviceRegion: 'Open Market',
-            franchiseFee: cityFranchiseFee,
-            salesTax: citySalesTax
-          }
+          serviceRegion: 'Open Market',
+          franchiseFee: cityFranchiseFee
         };
       }
       
@@ -679,13 +632,10 @@ export class ServiceAreaValidator {
         latitude,
         longitude,
         status: 'serviceable',
+        reason: '',
         division,
-        divisionData: {
-          csrCenter: division,
-          serviceRegion: 'Open Market',
-          franchiseFee: cityFranchiseFee,
-          salesTax: citySalesTax
-        }
+        serviceRegion: 'Open Market',
+        franchiseFee: cityFranchiseFee
       };
     }
 
@@ -707,13 +657,10 @@ export class ServiceAreaValidator {
         latitude,
         longitude,
         status: 'not-serviceable',
-        failureReason: 'Missing required address information',
-        divisionData: {
-          csrCenter: 'Invalid',
-          serviceRegion: 'Invalid',
-          franchiseFee: cityFranchiseFee,
-          salesTax: citySalesTax
-        }
+        reason: 'Missing required address information',
+        division: 'Invalid',
+        serviceRegion: 'Invalid',
+        franchiseFee: cityFranchiseFee
       };
     }
 
@@ -737,13 +684,10 @@ export class ServiceAreaValidator {
         latitude,
         longitude,
         status: 'not-serviceable',
-        failureReason: `Service only available in Texas. ${state} is outside our service area.`,
-        divisionData: {
-          csrCenter: 'Not Serviceable',
-          serviceRegion: 'Not Serviceable',
-          franchiseFee: cityFranchiseFee,
-          salesTax: citySalesTax
-        }
+        reason: `Service only available in Texas. ${state} is outside our service area.`,
+        division: 'Not Serviceable',
+        serviceRegion: 'Not Serviceable',
+        franchiseFee: cityFranchiseFee
       };
     }
 
@@ -767,13 +711,10 @@ export class ServiceAreaValidator {
         latitude,
         longitude,
         status: 'not-serviceable',
-        failureReason: `${city}, ${state} is not in our service area - no division mapping found`,
-        divisionData: {
-          csrCenter: 'Not Serviceable',
-          serviceRegion: 'Not Serviceable',
-          franchiseFee: cityFranchiseFee,
-          salesTax: citySalesTax
-        }
+        reason: `${city}, ${state} is not in our service area - no division mapping found`,
+        division: 'Not Serviceable',
+        serviceRegion: 'Not Serviceable',
+        franchiseFee: cityFranchiseFee
       };
     }
 
@@ -810,15 +751,10 @@ export class ServiceAreaValidator {
         latitude,
         longitude,
         status: 'manual-review',
-        reason: 'Container size flagged for manual review',
-        failureReason: `Container size "${containerSize}" is not recognized and requires manual review`,
+        reason: `Container size "${containerSize}" is not recognized and requires manual review`,
         division,
-        divisionData: {
-          csrCenter: division,
-          serviceRegion: 'Open Market',
-          franchiseFee: cityFranchiseFee,
-          salesTax: citySalesTax
-        }
+        serviceRegion: 'Open Market',
+        franchiseFee: cityFranchiseFee
       };
     }
 
@@ -839,13 +775,10 @@ export class ServiceAreaValidator {
       latitude,
       longitude,
       status: 'serviceable',
+      reason: '',
       division,
-      divisionData: {
-        csrCenter: division,
-        serviceRegion: 'Open Market',
-        franchiseFee: cityFranchiseFee,
-        salesTax: citySalesTax
-      }
+      serviceRegion: 'Open Market',
+      franchiseFee: cityFranchiseFee
     };
   }
 
@@ -867,13 +800,35 @@ export class ServiceAreaValidator {
       // Extract headers
       const headers = data[headerRowIndex];
       
+      if (!headers || headers.length === 0) {
+        throw new Error('Header row is empty or invalid');
+      }
+      
       // Detect column mapping
       const columnMapping = detectColumns(headers);
       console.log('🗂️ Column mapping detected:', columnMapping);
       
       // Parse service requests using the detected structure
-      const locationRequests = parseServiceRequests(data, columnMapping);
-      console.log('✅ Successfully parsed location requests:', locationRequests.length);
+      const serviceRequests = parseServiceRequests(data, columnMapping);
+      console.log('✅ Successfully parsed service requests:', serviceRequests.length);
+      
+      // Map ServiceRequest to LocationRequest (add missing properties)
+      const locationRequests: LocationRequest[] = serviceRequests.map(request => ({
+        id: request.id,
+        companyName: request.customerName, // Map customerName to companyName
+        address: request.address,
+        city: request.city,
+        state: request.state,
+        zipCode: request.zipCode,
+        equipmentType: request.equipmentType,
+        containerSize: request.containerSize,
+        frequency: request.frequency,
+        materialType: request.materialType,
+        addOns: request.addOns,
+        binQuantity: request.binQuantity,
+        latitude: null, // CSV doesn't include coordinates
+        longitude: null // CSV doesn't include coordinates
+      }));
       
       return locationRequests;
     } catch (error) {
