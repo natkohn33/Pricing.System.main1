@@ -435,7 +435,7 @@ export function CustomPricingForm({
     ];
   };
 
-onfiguration is being initialized...
+configuration is being initialized...
               </p>
             </div>
           </div>
