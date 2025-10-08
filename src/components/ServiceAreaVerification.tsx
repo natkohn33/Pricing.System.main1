@@ -811,10 +811,11 @@ export function ServiceAreaVerification({
                                             )}
                                             {location.materialType && (
                                               <p>Material: {location.materialType}</p>
-                                            )}
-                                          </div>
-                                        </div>
-                                          )}
+                                        
+                                        )}
+                                    </div>
+                                  </div>
+                                </div>
                                                
                             
                                 <div className="ml-3 flex-shrink-0">
