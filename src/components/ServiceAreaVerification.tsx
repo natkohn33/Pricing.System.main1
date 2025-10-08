@@ -828,9 +828,10 @@ export function ServiceAreaVerification({
                       <div className="mt-4 pt-3 border-t border-yellow-200">
                         <p className="text-xs text-yellow-700 text-center">
                           <span className="font-medium">💡 Tip:</span> Click on any location above to jump to its details in the verification results
+                          >
                         </p>
                       </div>
-                    </div>
+     
                     
                     {/* Tooltip arrow */}
                     <div className="absolute top-full left-8 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-yellow-300"></div>
