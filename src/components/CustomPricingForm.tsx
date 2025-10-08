@@ -664,7 +664,6 @@ export function CustomPricingForm({
                   </div>
               </div>
             <button
-            )}
           </div>
       )}
 
