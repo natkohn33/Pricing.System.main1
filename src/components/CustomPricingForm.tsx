@@ -662,8 +662,8 @@ export function CustomPricingForm({
                       Tax Exempt
                     </label>
                   </div>
-                </div>
               </div>
+            <button
             )}
           </div>
         </div>
@@ -680,11 +680,9 @@ export function CustomPricingForm({
                 <h3 className="text-lg font-semibold text-gray-900">Global Pricing Configuration</h3>
                 <p className="text-gray-600 text-sm mt-1">
                   Set default pricing that applies to all locations unless overridden by specific rules
-  
-                            <p className="text-gray-600 text-sm mt-1">
-                  Set default pricing that applies to all locations unless overridden by specific rules
                 </p>
-
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <div>
@@ -776,8 +774,7 @@ export function CustomPricingForm({
                 />
               </div>
             </div>
-         </p>
-         
+          </div>
 
           {/* Container-Specific Pricing Rules */}
           <div className="bg-white border border-gray-200 rounded-lg p-6">
@@ -788,7 +785,7 @@ export function CustomPricingForm({
                   <h3 className="text-lg font-semibold text-gray-900">Container-Specific Pricing</h3>
                   <p className="text-gray-600 text-sm mt-1">
                     Override global pricing for specific container sizes and equipment types
-    
+                  </p>
                 </div>
               </div>
               <button
@@ -886,9 +883,8 @@ export function CustomPricingForm({
                   <p className="text-gray-600 text-sm mt-1">
                     Configure additional fees that apply to specific divisions or all locations
     
-                </div>
-              </div>
-              <button
+            </div>
+            <button
                 onClick={addAdditionalFee}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700"
               >
@@ -981,9 +977,8 @@ export function CustomPricingForm({
                   <p className="text-gray-600 text-sm mt-1">
                     Create specific pricing rules for unique service combinations
     
-                </div>
-              </div>
-              <button
+            </div>
+            <button
                 onClick={() => setShowManualRuleForm(!showManualRuleForm)}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
               >
@@ -1076,8 +1071,8 @@ export function CustomPricingForm({
                   >
                     Add Rule
                   </button>
-                </div>
               </div>
+            <button
             )}
 
             {rules.length === 0 ? (
