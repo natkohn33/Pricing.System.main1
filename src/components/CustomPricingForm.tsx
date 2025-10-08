@@ -446,7 +446,7 @@ export function CustomPricingForm({
               <h3 className="text-lg font-semibold text-gray-900">Location Pricing</h3>
               <p className="text-blue-700 text-sm mt-1">
                 Configure pricing for: {serviceableLocation?.address}, {serviceableLocation?.city}, {serviceableLocation?.state}
-
+              </p>
             </div>
           </div>
 
