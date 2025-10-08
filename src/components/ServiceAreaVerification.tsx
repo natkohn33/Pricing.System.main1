@@ -801,21 +801,19 @@ export function ServiceAreaVerification({
                                           <p className="text-gray-600 text-xs mb-1">Service Details:</p>
                                           <div className="text-xs text-gray-700 space-y-1">
                                             {location.equipmentType && (
-                                              <p>Equipment: {location.equipmentType}</p>
-                                            )}
-                                            {location.containerSize && (
-                                              <p>Container: {location.containerSize}</p>
-                                            )}
-                                            {location.frequency && (
-                                              <p>Frequency: {location.frequency}</p>
-                                            )}
-                                            {location.materialType && (
-                                              <p>Material: {location.materialType}</p>
-                                        
-                                        )}
-                                    </div>
-                                  </div>
-                                </div>
+      <div>Equipment: {location.equipmentType}</div>
+    )}
+    {location.containerSize && (
+      <div>Container: {location.containerSize}</div>
+    )}
+    {location.frequency && (
+      <div>Frequency: {location.frequency}</div>
+    )}
+    {location.materialType && (
+      <div>Material: {location.materialType}</div>
+    )}
+  </>
+)}
                                                
                             
                                 <div className="ml-3 flex-shrink-0">
