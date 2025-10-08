@@ -4,32 +4,32 @@ import { parseExcelFile, isExcelFile } from '../utils/excelParser';
 import { parseCSV } from '../utils/csvParser';
 import { geocodeAddress } from '../utils/mapboxGeocoding';
 import { FileUpload } from './FileUpload';
-import { StickyFooterButton } from './StickyFooterButton.tsx';
-import { 
-  MapPin, 
-  Upload, 
-  Download, 
-  CheckCircle, 
-  XCircle, 
-  AlertTriangle, 
-  Plus, 
-  Trash2, 
-  ThumbsUp, 
-  ThumbsDown, 
+import { StickyFooterButton } from './StickyFooterButton.tsx'; // Corrected import path
+import {
+  MapPin,
+  Upload,
+  Download,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  Plus,
+  Trash2,
+  ThumbsUp,
+  ThumbsDown,
   Loader2,
   ArrowRight
 } from 'lucide-react';
-import { 
-  CONTAINER_SIZES, 
-  FREQUENCY_OPTIONS, 
-  EQUIPMENT_TYPES, 
-  MATERIAL_TYPES 
+import {
+  CONTAINER_SIZES,
+  FREQUENCY_OPTIONS,
+  EQUIPMENT_TYPES,
+  MATERIAL_TYPES
 } from '../data/divisions';
 
-export function ServiceAreaVerification({ 
-  onVerificationComplete, 
-  onContinue, 
-  onFileNameUpdate 
+export function ServiceAreaVerification({
+  onVerificationComplete,
+  onContinue,
+  onFileNameUpdate
 }) {
   // State Management
   const [uploadedFile, setUploadedFile] = useState(null);
@@ -345,7 +345,7 @@ export function ServiceAreaVerification({
     const manualReviewResults = verificationResults.results.filter(r => r.status === 'manual-review');
 
     return (
-      <div className="max-w-6xl mx-auto p-6 pb-24">
+      <div className="max-w-6xl mx-auto p-6 pb-24"> {/* Added pb-24 for sticky footer */}
 
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
@@ -758,6 +758,3 @@ export function ServiceAreaVerification({
     </div>
   );
 }
-
-
-
