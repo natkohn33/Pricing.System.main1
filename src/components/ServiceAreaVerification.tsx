@@ -795,46 +795,42 @@ export function ServiceAreaVerification({
     </div>
   );
 }
-{/* Service Details if available */}
-{(location.equipmentType || location.containerSize || location.frequency) && (
-  <div className="mt-2">
-    <p className="text-gray-600 text-xs mb-1">Service Details:</p>
-    <div className="text-xs text-gray-700 space-y-1">
-      {location.equipmentType && <div>Equipment: {location.equipmentType}</div>}
-      {location.containerSize && <div>Container: {location.containerSize}</div>}
-      {location.frequency && <div>Frequency: {location.frequency}</div>}
-      {location.materialType && <div>Material: {location.materialType}</div>}
+<>
+  {/* Service Details if available */}
+  {(location.equipmentType || location.containerSize || location.frequency) && (
+    <div className="mt-2">
+      <p className="text-gray-600 text-xs mb-1">Service Details:</p>
+      <div className="text-xs text-gray-700 space-y-1">
+        {location.equipmentType && <div>Equipment: {location.equipmentType}</div>}
+        {location.containerSize && <div>Container: {location.containerSize}</div>}
+        {location.frequency && <div>Frequency: {location.frequency}</div>}
+        {location.materialType && <div>Material: {location.materialType}</div>}
+      </div>
+    </div>
+  )}
+
+  <div className="ml-3 flex-shrink-0">
+    <div className="flex flex-col items-center space-y-2">
+      <AlertCircle className="h-6 w-6 text-yellow-600" />
+      <span className="text-xs text-yellow-700 font-medium">Click to View</span>
     </div>
   </div>
-)}
 
-<div className="ml-3 flex-shrink-0">
-  <div className="flex flex-col items-center space-y-2">
-    <AlertCircle className="h-6 w-6 text-yellow-600" />
-    <span className="text-xs text-yellow-700 font-medium">Click to View</span>
+  {/* Hover indicator */}
+  <div className="mt-2 pt-2 border-t border-yellow-200 opacity-0 group-hover/item:opacity-100 transition-opacity">
+    <p className="text-xs text-yellow-600 flex items-center">
+      <span className="mr-1">👆</span>
+      Click to scroll to this location in the results below
+    </p>
   </div>
-</div>
 
-{/* Hover indicator */}
-<div className="mt-2 pt-2 border-t border-yellow-200 opacity-0 group-hover/item:opacity-100 transition-opacity">
-  <p className="text-xs text-yellow-600 flex items-center">
-    <span className="mr-1">👆</span>
-    Click to scroll to this location in the results below
-  </p>
-</div>
+  {/* Footer with action guidance */}
+  <div className="mt-4 pt-3 border-t border-yellow-200">
+    <p className="text-xs text-yellow-700 text-center">
+      <span className="font-medium">💡 Tip:</span> Click on any location above to jump to its details in the verification results
+    </p>
+  </div>
 
-{/* Footer with action guidance */}
-<div className="mt-4 pt-3 border-t border-yellow-200">
-  <p className="text-xs text-yellow-700 text-center">
-    <span className="font-medium">💡 Tip:</span> Click on any location above to jump to its details in the verification results
-  </p>
-</div>
-
-
- {/* Tooltip arrow */}
-    <div className="absolute top-full left-8 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-yellow-300"
-      >
-    </div>
-     <div>
-  </>
-);
+  {/* Tooltip arrow */}
+  <div className="absolute top-full left-8 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-yellow-300"></div>
+</>
