@@ -853,5 +853,3 @@ export function ServiceAreaVerification({
     </div>
   );
 }
-
-export default ServiceAreaVerification;
