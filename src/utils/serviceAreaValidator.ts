@@ -182,74 +182,8 @@ export class ServiceAreaValidator {
       };
     }
 
-    // PRIORITY CHECK 1.5: Cities that must always be marked as serviceable (OVERRIDE ALL SPATIAL CHECKS)
-    const alwaysServiceableCities = ['conroe'];
-
-    if ((normalizedState === 'texas' || normalizedState === 'tx') &&
-        alwaysServiceableCities.includes(normalizedCity)) {
-      console.log('✅ PRIORITY CHECK 1.5: City explicitly marked as ALWAYS serviceable (overrides spatial):', city, state);
-
-      // Determine appropriate division for explicitly serviceable cities
-      const division = this.determineDivision(city, state) || 'STX';
-
-      // Container size validation
-      const recognizedSizes = this.getRecognizedContainerSizes();
-      const normalizedContainerSize = this.normalizeContainerSizeForValidation(containerSize);
-
-      const isRecognizedSize = recognizedSizes.some(size =>
-        size.toLowerCase() === normalizedContainerSize.toLowerCase() ||
-        size.toLowerCase() === containerSize.toLowerCase().trim()
-      );
-
-      if (!isRecognizedSize && containerSize && containerSize.trim() !== '') {
-        return {
-          id,
-          companyName,
-          address,
-          city,
-          state,
-          zipCode,
-          equipmentType,
-          containerSize,
-          frequency,
-          materialType,
-          addOns,
-          binQuantity,
-          latitude,
-          longitude,
-          status: 'manual-review',
-          reason: `Container size "${containerSize}" is not recognized and requires manual review`,
-          division,
-          serviceRegion: 'Open Market',
-          franchiseFee: cityFranchiseFee
-        };
-      }
-
-      return {
-        id,
-        companyName,
-        address,
-        city,
-        state,
-        zipCode,
-        equipmentType,
-        containerSize,
-        frequency,
-        materialType,
-        addOns,
-        binQuantity,
-        latitude,
-        longitude,
-        status: 'serviceable',
-        reason: '',
-        division,
-        serviceRegion: 'Open Market',
-        franchiseFee: cityFranchiseFee
-      };
-    }
-
-    // PRIORITY CHECK 1.6: Equipment-specific restrictions for Beaumont, Texas
-    if ((normalizedState === 'texas' || normalizedState === 'tx') &&
+    // PRIORITY CHECK 1.5: Equipment-specific restrictions for Beaumont, Texas
+    if ((normalizedState === 'texas' || normalizedState === 'tx') && 
         normalizedCity === 'beaumont') {
       const normalizedEquipmentType = equipmentType.toLowerCase().trim();
       
@@ -630,7 +564,6 @@ export class ServiceAreaValidator {
 
 
     // PRIORITY CHECK 4: Cities explicitly marked as serviceable (legacy fallback)
-    // NOTE: Conroe has been moved to PRIORITY CHECK 1.5 for higher priority override
     const explicitlyServiceableCities = [
       'burleson',
       'crosby'
@@ -917,7 +850,7 @@ export class ServiceAreaValidator {
       const ntxCities = ['dallas', 'fort worth', 'plano', 'garland', 'irving', 'grand prairie', 'mesquite', 'mckinney', 'carrollton', 'frisco', 'denton', 'richardson', 'lewisville', 'allen', 'flower mound', 'mansfield', 'euless', 'desoto', 'grapevine', 'bedford', 'haltom city', 'wylie', 'keller', 'coppell', 'duncanville', 'rockwall', 'farmers branch', 'rowlett', 'the colony', 'southlake', 'watauga', 'colleyville', 'corinth', 'highland village', 'lancaster', 'little elm', 'north richland hills', 'princeton', 'sachse', 'addison', 'cedar hill', 'glenn heights', 'murphy', 'prosper', 'red oak', 'seagoville', 'university park', 'cockrell hill', 'combine', 'highland park', 'hutchins', 'ovilla', 'sunnyvale', 'wilmer'];
 
       // STX cities  
-      const stxCities = ['houston', 'corpus christi', 'pearland', 'league city', 'sugar land', 'baytown', 'beaumont', 'galveston', 'conroe', 'texas city', 'huntsville', 'lufkin', 'tyler', 'longview', 'texarkana', 'port arthur', 'orange', 'liberty', 'cleveland', 'dayton', 'tomball', 'jersey village', 'cypress', 'humble', 'katy', 'spring'];
+      const stxCities = ['houston', 'corpus christi', 'pasadena', 'pearland', 'league city', 'sugar land', 'baytown', 'beaumont', 'missouri city', 'galveston', 'conroe', 'texas city', 'huntsville', 'lufkin', 'tyler', 'longview', 'texarkana', 'port arthur', 'orange', 'liberty', 'cleveland', 'dayton', 'tomball', 'jersey village', 'cypress', 'humble', 'katy', 'spring'];
 
       // CTX cities
       const ctxCities = ['austin', 'san antonio', 'waco', 'killeen', 'temple', 'bryan', 'college station', 'round rock', 'cedar park', 'georgetown', 'pflugerville', 'leander', 'san marcos', 'new braunfels', 'kyle', 'buda', 'dripping springs', 'bee cave', 'lakeway', 'west lake hills', 'rollingwood', 'sunset valley', 'manchaca', 'del valle', 'elgin', 'manor', 'hutto', 'taylor', 'granger', 'jarrell', 'florence', 'liberty hill', 'bertram', 'burnet', 'marble falls', 'horseshoe bay', 'granite shoals', 'cottonwood shores', 'meadowlakes', 'spicewood', 'lockhart', 'luling', 'gonzales', 'nixon', 'smiley', 'waelder', 'flatonia', 'muldoon', 'schulenburg', 'weimar', 'columbus', 'eagle lake', 'wallis', 'orchard', 'east bernard', 'boling', 'wharton', 'hungerford', 'louise', 'blessing', 'midfield', 'matagorda', 'bay city', 'wadsworth', 'markham', 'van vleck', 'sweeny', 'west columbia', 'brazoria', 'angleton', 'lake jackson', 'clute', 'freeport', 'surfside beach', 'quintana', 'hearne', 'franklin', 'bremond', 'calvert', 'reagan', 'centerville', 'normangee', 'madisonville', 'midway', 'crockett', 'lovelady', 'grapeland', 'elkhart', 'palestine', 'davilla', 'rogers', 'buckholts', 'cameron', 'rockdale', 'thorndale', 'thrall', 'belton'];
