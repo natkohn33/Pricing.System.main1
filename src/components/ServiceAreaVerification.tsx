@@ -816,8 +816,7 @@ export function ServiceAreaVerification({
                                         </div>
                                           )}
                                     </div>
-                                  </div>
-                                </div>
+                         
                                 
                                 <div className="ml-3 flex-shrink-0">
                                   <div className="flex flex-col items-center space-y-2">
