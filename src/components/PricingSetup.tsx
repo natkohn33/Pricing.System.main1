@@ -7,6 +7,7 @@ import { FranchisedCitySupplementaryForm } from './FranchisedCitySupplementaryFo
 import { isFranchisedCity, getFranchisedCityName } from '../utils/franchisedCityParser';
 import { Settings, Upload, CreditCard as Edit3, ArrowRight, CheckCircle, XCircle, Brain, DollarSign, Plus, X } from 'lucide-react';
 import { getBuiltInRegionalPricingData } from '../data/regionalRateSheets';
+import { LocationsReference } from './LocationsReference';
 
 interface PricingSetupProps {
   onPricingLogicSet: (logic: PricingLogic) => void;
@@ -55,19 +56,27 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
   const prevManualRulesRef = useRef<CustomPricingRule[]>([]);
   
   // Local pricingConfig state initialized from savedData
-  const [pricingConfig, setPricingConfig] = useState<PricingConfig>(() => savedData?.pricingConfig || {
-    smallContainerPrice: 0,
-    largeContainerPrice: 0,
-    defaultFrequency: '1x/week',
-    frequencyDiscounts: {
-      twoThreeTimesWeek: 0,
-      fourTimesWeek: 0
-    },
-    franchiseFee: 0,
-    tax: 8.25,
-    deliveryFee: 0,
-    fuelSurcharge: 0,
-    extraPickupRate: 0,
+  const [pricingConfig, setPricingConfig] = useState<PricingConfig>(() => {
+    const defaultPricingConfig: PricingConfig = {
+      smallContainerPrice: 0,
+      largeContainerPrice: 0,
+      defaultFrequency: '1x/week',
+      frequencyDiscounts: {
+        twoThreeTimesWeek: 0,
+        fourTimesWeek: 0
+      },
+      franchiseFee: 0,
+      tax: 8.25,
+      deliveryFee: 0,
+      fuelSurcharge: 0,
+      extraPickupRate: 0,
+      additionalFees: [],
+      containerSpecificPricingRules: []
+    };
+    return savedData?.pricingConfig ? { ...defaultPricingConfig, ...savedData.pricingConfig } : defaultPricingConfig;
+  });
+
+
     additionalFees: [],
     containerSpecificPricingRules: []
   });
@@ -472,17 +481,29 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
 
   return (
     <div className="space-y-8">
+      {serviceAreaVerification && serviceAreaVerification.totalProcessed > 0 && (
+        <div className="mb-8">
+          <LocationsReference
+            serviceable={verifiedServiceableLocations}
+            nonServiceable={verifiedNotServiceableLocations}
+          />
+        </div>
+      )}
+      {serviceAreaVerification && serviceAreaVerification.totalProcessed > 0 && (
+        <div className="mb-8">
+          <LocationsReference
+            serviceable={verifiedServiceableLocations}
+            nonServiceable={verifiedNotServiceableLocations}
+          />
+        </div>
+      )}
       {/* Serviceable Locations Reference */}
       {allVerificationLocations.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <div className="flex items-center mb-4">
-            <Settings className="h-6 w-6 text-green-600 mr-3" />
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">
-                All Locations Reference
-              </h3>
-              <p className="text-gray-600 mt-1">
-                Review all {allVerificationLocations.length} location{allVerificationLocations.length !== 1 ? 's' : ''} ({verifiedServiceableLocations.length} serviceable, {verifiedNotServiceableLocations.length} not serviceable) while configuring pricing logic
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <div className="flex items-center mb-6">
+          <Settings className="h-6 w-6 text-blue-600 mr-3" />
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Step 1: Choose Your Pricing Logic</h3>
               </p>
             </div>
           </div>
@@ -505,11 +526,20 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
         </div>
       )}
 
+      {serviceAreaVerification && serviceAreaVerification.totalProcessed > 0 && (
+        <div className="mb-8">
+          <LocationsReference
+            serviceable={verifiedServiceableLocations}
+            nonServiceable={verifiedNotServiceableLocations}
+          />
+        </div>
+      )}
+
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <div className="flex items-center mb-6">
           <Settings className="h-6 w-6 text-blue-600 mr-3" />
           <div>
-            <h2 className="text-2xl font-semibold text-gray-900">Step 1: Choose Your Pricing Logic</h2>
+            <h3 className="text-lg font-semibold text-gray-900">Step 1: Choose Your Pricing Logic</h3>
             <p className="text-gray-600 mt-1">
               Configure your pricing logic using manual rules and optional advanced settings.
             </p>
@@ -575,22 +605,7 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
               onPricingConfigUpdate={handlePricingConfigUpdate}
               serviceAreaVerification={serviceAreaVerification}
               initialRules={manualRules}
-              initialConfig={pricingConfig || {
-                smallContainerPrice: 0,
-                largeContainerPrice: 0,
-                defaultFrequency: '1x/week',
-                frequencyDiscounts: {
-                  twoThreeTimesWeek: 0,
-                  fourTimesWeek: 0
-                },
-                franchiseFee: 0,
-                tax: 8.25,
-                deliveryFee: 0,
-                fuelSurcharge: 0,
-                extraPickupRate: 0,
-                additionalFees: [],
-                containerSpecificPricingRules: []
-              }}
+              pricingConfig={pricingConfig}
             />
           </div>
         )}
