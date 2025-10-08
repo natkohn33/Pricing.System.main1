@@ -826,7 +826,7 @@ export function ServiceAreaVerification({
                                 </div>
                               </div>
               
-                                      </div>
+                                    <div>
 <div className="mt-2 pt-2 border-t border-yellow-200 opacity-0 group-hover/item:opacity-100 transition-opacity">
   {/* Hover indicator */}
   <p className="text-xs text-yellow-600 flex items-center">
