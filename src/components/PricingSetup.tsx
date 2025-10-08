@@ -575,7 +575,22 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
               onPricingConfigUpdate={handlePricingConfigUpdate}
               serviceAreaVerification={serviceAreaVerification}
               initialRules={manualRules}
-              initialConfig={pricingConfig}
+              initialConfig={pricingConfig || {
+                smallContainerPrice: 0,
+                largeContainerPrice: 0,
+                defaultFrequency: '1x/week',
+                frequencyDiscounts: {
+                  twoThreeTimesWeek: 0,
+                  fourTimesWeek: 0
+                },
+                franchiseFee: 0,
+                tax: 8.25,
+                deliveryFee: 0,
+                fuelSurcharge: 0,
+                extraPickupRate: 0,
+                additionalFees: [],
+                containerSpecificPricingRules: []
+              }}
             />
           </div>
         )}
