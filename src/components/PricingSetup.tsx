@@ -78,7 +78,7 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
 
 
     additionalFees: [],
-    containerSpecificPricingRules: []
+    containerSpecificPricingRules: [],
   });
 
   // Add state to track current pricing logic
