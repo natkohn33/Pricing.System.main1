@@ -823,6 +823,7 @@ export function ServiceAreaVerification({
   </div>
 </div>
 </div> 
+                                        <
                         
      {/* Footer with action guidance */}
                       <div className="mt-4 pt-3 border-t border-yellow-200">
@@ -830,7 +831,7 @@ export function ServiceAreaVerification({
                           <span className="font-medium">💡 Tip:</span> Click on any location above to jump to its details in the verification results
                           >
                         </p>
-                      </div>
+                    
      
                     
                     {/* Tooltip arrow */}
