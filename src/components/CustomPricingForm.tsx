@@ -664,8 +664,7 @@ export function CustomPricingForm({
                   </div>
               </div>
             <button
-          </div>
-      )}
+            )}
 
       {/* Bulk Upload Workflow */}
       {!isSingleLocation && (
