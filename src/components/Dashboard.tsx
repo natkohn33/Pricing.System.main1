@@ -75,6 +75,7 @@ export function Dashboard() {
   };
 
   const handlePricingLogicSet = (logic: PricingLogic) => {
+    console.log('🔧 [Dashboard] handlePricingLogicSet called:', logic);
     setPricingLogic(logic);
     pricingEngine.setPricingLogic(logic);
     
@@ -83,20 +84,6 @@ export function Dashboard() {
       pricingEngine.setRegionalPricingData(logic.regionalPricingData);
       console.log('🧠 Regional pricing data set in pricing engine:', logic.regionalPricingData);
     }
-   
-    type DashboardState = {
-  currentStep: 'verification' | 'setup' | 'processing';
-  serviceAreaVerification: ServiceAreaVerificationData | null;
-  uploadedFileName: string;
-  pricingLogic: PricingLogic | null;
-  savedPricingSetupData: PricingSetupData;
-};
-
-type DashboardAction = 
-  | { type: 'SET_STEP'; payload: DashboardState['currentStep'] }
-  | { type: 'SET_SERVICE_AREA'; payload: ServiceAreaVerificationData }
-  | { type: 'SET_PRICING_LOGIC'; payload: PricingLogic }
-  // 
     
     // Enhanced logging for debugging
     console.log('🔧 ENHANCED: Pricing logic set in Dashboard with PPY verification:', {
@@ -135,20 +122,58 @@ type DashboardAction =
   };
 
   const handlePricingSetupDataSave = React.useCallback((data: any) => {
+    console.log('💾 [Dashboard] handlePricingSetupDataSave called:', data);
     setSavedPricingSetupData(data);
   }, []);
 
   const handleContinueToProcessing = () => {
+    console.log('🚀 [Dashboard] handleContinueToProcessing called - transitioning to processing step');
     setCurrentStep('processing');
   };
 
   const handleBackToVerification = () => {
+    console.log('⬅️ [Dashboard] handleBackToVerification called');
     setCurrentStep('verification');
   };
 
   const handleBackToSetup = () => {
+    console.log('⬅️ [Dashboard] handleBackToSetup called');
     setCurrentStep('setup');
   };
+
+  // Error boundary for PricingSetup component
+  const renderPricingSetup = () => {
+    try {
+      return (
+        <PricingSetup
+          onPricingLogicSet={handlePricingLogicSet}
+          onContinue={handleContinueToProcessing}
+          serviceAreaVerification={serviceAreaVerification}
+          uploadedFileName={uploadedFileName}
+          savedData={savedPricingSetupData}
+          onDataSave={handlePricingSetupDataSave}
+        />
+      );
+    } catch (error) {
+      console.error('❌ [Dashboard] Error rendering PricingSetup component:', error);
+      return (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-red-800 mb-2">Error Loading Pricing Setup</h3>
+          <p className="text-red-700 mb-4">
+            There was an error loading the pricing setup component. Please check the console for more details.
+          </p>
+          <button
+            onClick={handleBackToVerification}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
+          >
+            Back to Verification
+          </button>
+        </div>
+      );
+    }
+  };
+
+  console.log('🔄 [Dashboard] Rendering with currentStep:', currentStep);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -163,6 +188,9 @@ type DashboardAction =
               </p>
             </div>
             <div className="flex items-center space-x-4">
+              <div className="text-sm text-gray-500">
+                Current Step: <span className="font-medium capitalize">{currentStep}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -190,14 +218,20 @@ type DashboardAction =
               
               <div className={`w-12 h-0.5 ${currentStep === 'setup' || currentStep === 'processing' ? 'bg-blue-600' : 'bg-gray-300'}`}></div>
               
-              <div className={`flex items-center space-x-2 ${currentStep === 'setup' ? 'text-blue-600' : 'text-green-600'}`}>
+              <div className={`flex items-center space-x-2 ${
+                currentStep === 'setup' ? 'text-blue-600' : 
+                currentStep === 'processing' ? 'text-green-600' : 'text-gray-400'
+              }`}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                  currentStep === 'setup' ? 'bg-blue-100' : 'bg-green-100'
+                  currentStep === 'setup' ? 'bg-blue-100' : 
+                  currentStep === 'processing' ? 'bg-green-100' : 'bg-gray-100'
                 }`}>
                   {currentStep === 'setup' ? (
                     <Settings className="h-4 w-4" />
-                  ) : (
+                  ) : currentStep === 'processing' ? (
                     <span className="text-sm font-medium">✓</span>
+                  ) : (
+                    <Settings className="h-4 w-4" />
                   )}
                 </div>
                 <span className="font-medium">Step 1: Choose Pricing Logic</span>
@@ -253,14 +287,15 @@ type DashboardAction =
 
         {/* Pricing Setup */}
         {currentStep === 'setup' && (
-          <PricingSetup
-            onPricingLogicSet={handlePricingLogicSet}
-            onContinue={handleContinueToProcessing}
-            serviceAreaVerification={serviceAreaVerification}
-            uploadedFileName={uploadedFileName}
-            savedData={savedPricingSetupData}
-            onDataSave={handlePricingSetupDataSave}
-          />
+          <div>
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+              <p className="text-sm text-blue-800">
+                <strong>Debug Info:</strong> Rendering Pricing Setup component. 
+                Service Area Data: {serviceAreaVerification ? `${serviceAreaVerification.serviceableCount} serviceable locations` : 'None'}
+              </p>
+            </div>
+            {renderPricingSetup()}
+          </div>
         )}
 
         {/* Processing Mode */}
@@ -288,11 +323,13 @@ type DashboardAction =
             {pricingLogic && (
               <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-blue-800 font-medium">
-                  Active Pricing Logic: {pricingLogic.type === 'broker' ? 'Broker Upload' : 'Custom Division Logic'}
+                  Active Pricing Logic: {pricingLogic.type === 'broker' ? 'Broker Upload' : pricingLogic.type === 'regional-brain' ? 'Regional Pricing Brain' : 'Custom Division Logic'}
                 </p>
                 <p className="text-blue-700 text-sm mt-1">
                   {pricingLogic.type === 'broker' 
                     ? `Using ${pricingLogic.brokerRates?.length || 0} broker pricing records`
+                    : pricingLogic.type === 'regional-brain'
+                    ? `Using regional pricing data with ${pricingLogic.regionalPricingData?.rateSheets?.length || 0} rate sheets`
                     : `Using ${pricingLogic.customRules?.length || 0} custom pricing rules`
                   }
                 </p>
