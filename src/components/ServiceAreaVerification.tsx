@@ -817,8 +817,7 @@ export function ServiceAreaVerification({
                                       )}
                                     </div>
                                   </div>
-                                </div>
-                                
+                             
                                 <div className="ml-3 flex-shrink-0">
                                   <div className="flex flex-col items-center space-y-2">
                                     <AlertCircle className="h-6 w-6 text-yellow-600" />
