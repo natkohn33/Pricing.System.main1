@@ -823,11 +823,12 @@ export function ServiceAreaVerification({
     </div> 
 </div>
 <
-  <div className="mt-2 pt-2 border-t border-yellow-200 opacity-0 group-hover/item:opacity-100 transition-opacity">
+</div className="mt-2 pt-2 border-t border-yellow-200 opacity-0 group-hover/item:opacity-100 transition-opacity">
     /* Hover indicator */
     <p className="text-xs text-yellow-600 flex items-center"</p>
       Click to scroll to this location in the results below
     </p>
+                                        <
 
   {/* Footer with action guidance */}
   <div className="mt-4 pt-3 border-t border-yellow-200">
