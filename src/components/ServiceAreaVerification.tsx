@@ -23,8 +23,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
   const [autocomplete, setAutocomplete] = useState<google.maps.places.Autocomplete | null>(null);
   const [addressInputRef, setAddressInputRef] = useState<HTMLInputElement | null>(null);
 
-
-  
   // Geocoding state
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [geocodingProgress, setGeocodingProgress] = useState(0);
@@ -55,16 +53,12 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
 
   const validator = new ServiceAreaValidator();
 
-
   // Initialize Google Places Autocomplete
   React.useEffect(() => {
     const initializeAutocomplete = () => {
       if (!addressInputRef || !window.google?.maps?.places) {
-        console.log('🗺️ Google Maps API not ready yet, retrying...');
         return false;
       }
-
-      console.log('🗺️ Initializing Google Places Autocomplete...');
       
       const autocompleteInstance = new window.google.maps.places.Autocomplete(addressInputRef, {
         types: ['address'],
@@ -74,7 +68,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
 
       autocompleteInstance.addListener('place_changed', () => {
         const place = autocompleteInstance.getPlace();
-        console.log('📍 Place selected:', place);
         
         if (place.address_components) {
           let streetNumber = '';
@@ -112,18 +105,10 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
             state: state || 'Texas',
             zipCode: zipCode
           }));
-          
-          console.log('📍 Google Places autocomplete result:', {
-            fullAddress,
-            city,
-            state,
-            zipCode
-          });
         }
       });
       
       setAutocomplete(autocompleteInstance);
-      console.log('✅ Google Places Autocomplete initialized successfully');
       return true;
     };
 
@@ -135,13 +120,9 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
       
       const retryInterval = setInterval(() => {
         retryCount++;
-        console.log(`🔄 Retry ${retryCount}/${maxRetries} - Attempting to initialize Google Places Autocomplete...`);
         
         if (initializeAutocomplete() || retryCount >= maxRetries) {
           clearInterval(retryInterval);
-          if (retryCount >= maxRetries) {
-            console.warn('⚠️ Failed to initialize Google Places Autocomplete after maximum retries');
-          }
         }
       }, 500);
       
@@ -181,8 +162,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
   };
 
   const handleFileUpload = useCallback(async (file: File) => {
-    console.log('📁 FILE UPLOAD STARTED:', { fileName: file.name, fileSize: file.size });
-    
     setUploadedFile(file);
     onFileNameUpdate(file.name);
     
@@ -193,28 +172,17 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
       let data: string[][];
       
       if (isExcelFile(file)) {
-        console.log('📊 Processing Excel file...');
         const excelResult = await parseExcelFile(file);
         data = excelResult.data;
       } else {
-        console.log('📄 Processing CSV file...');
         const text = await file.text();
         data = parseCSV(text);
       }
       
-      console.log('📋 Parsed data:', {
-        rows: data.length,
-        columns: data[0]?.length || 0,
-        headers: data[0],
-        sampleData: data.slice(0, 3)
-      });
-      
       // Parse location requests
       const locationRequests = validator.parseLocationRequestsFromData(data, file.name);
-      console.log('📍 Parsed location requests:', locationRequests.length);
       
       // Geocode all addresses before processing
-      console.log('🗺️ Starting batch geocoding with Mapbox for', locationRequests.length, 'locations...');
       setGeocodingProgress(0);
       
       for (let i = 0; i < locationRequests.length; i++) {
@@ -223,33 +191,27 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
         
         try {
           const fullAddress = `${request.address}, ${request.city}, ${request.state} ${request.zipCode}`;
-          console.log(`🗺️ Geocoding ${i + 1}/${locationRequests.length}: ${fullAddress}`);
           
           const geocodingResult = await geocodeAddress(fullAddress);
           
           if (geocodingResult) {
             request.latitude = geocodingResult.latitude;
             request.longitude = geocodingResult.longitude;
-            console.log(`✅ Geocoded: ${fullAddress} -> [${geocodingResult.latitude}, ${geocodingResult.longitude}]`);
           } else {
-            console.warn(`❌ Failed to geocode: ${fullAddress}`);
             request.latitude = null;
             request.longitude = null;
           }
           
-          // Rate limiting: 100ms delay between requests for Mapbox (much faster than Nominatim)
+          // Rate limiting: 100ms delay between requests for Mapbox
           if (i < locationRequests.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 100));
           }
           
         } catch (error) {
-          console.error(`❌ Geocoding error for ${request.address}:`, error);
           request.latitude = null;
           request.longitude = null;
         }
       }
-      
-      console.log('🗺️ Batch geocoding complete with Mapbox');
       
       // Process each location
       const results: ServiceAreaResult[] = [];
@@ -289,38 +251,12 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
         results
       };
       
-      console.log('🔍 VERIFICATION COMPLETE - SETTING STATE:', {
-        verification: verification,
-        manualReviewCount: verification.manualReviewCount,
-        aboutToSetVerificationResults: true
-      });
-      
       setVerificationResults(verification);
-      
-      console.log('🔍 CALLING onVerificationComplete callback:', {
-        verification: verification,
-        onVerificationCompleteExists: !!onVerificationComplete
-      });
-      
       onVerificationComplete(verification);
       onFileNameUpdate(file.name);
       
-      console.log('🔍 File upload verification completed and callbacks called', {
-        verification: verification,
-        manualReviewCount: verification.manualReviewCount,
-        onVerificationCompleteExists: !!onVerificationComplete,
-        onFileNameUpdateExists: !!onFileNameUpdate
-      });
-      
-      console.log('✅ Service area verification complete:', {
-        total: verification.totalProcessed,
-        serviceable: verification.serviceableCount,
-        notServiceable: verification.notServiceableCount,
-        manualReview: verification.manualReviewCount
-      });
-      
     } catch (error) {
-      console.error('❌ Error processing file:', error);
+      console.error('Error processing file:', error);
       alert('Error processing file. Please check the format and try again.');
     } finally {
       setIsProcessing(false);
@@ -334,8 +270,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
       return;
     }
 
-    console.log('📍 SINGLE LOCATION SUBMIT STARTED:', singleLocationData);
-
     setIsGeocoding(true);
     
     const processLocation = async () => {
@@ -343,7 +277,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
         // Geocode the address first
         const fullAddress = `${singleLocationData.address}, ${singleLocationData.city}, ${singleLocationData.state} ${singleLocationData.zipCode}`;
         
-        console.log('🗺️ Geocoding single location:', fullAddress);
         const geocodingResult = await geocodeAddress(fullAddress);
         
         let latitude: number | null = null;
@@ -352,9 +285,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
         if (geocodingResult) {
           latitude = geocodingResult.latitude;
           longitude = geocodingResult.longitude;
-          console.log(`✅ Geocoded: ${fullAddress} -> [${latitude}, ${longitude}]`);
-        } else {
-          console.warn(`❌ Failed to geocode: ${fullAddress}`);
         }
         
         // Validate the location
@@ -383,33 +313,12 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
           results: [result]
         };
         
-        console.log('🔍 SINGLE LOCATION VERIFICATION COMPLETE - SETTING STATE:', {
-          verification: verification,
-          manualReviewCount: verification.manualReviewCount,
-          aboutToSetVerificationResults: true
-        });
-        
         setVerificationResults(verification);
-        
-        console.log('🔍 CALLING onVerificationComplete callback for single location:', {
-          verification: verification,
-          onVerificationCompleteExists: !!onVerificationComplete
-        });
-        
         onVerificationComplete(verification);
         onFileNameUpdate(`Single Location - ${singleLocationData.companyName || 'Unknown'}`);
         
-        console.log('🔍 Single location verification completed and callbacks called', {
-          verification: verification,
-          manualReviewCount: verification.manualReviewCount,
-          onVerificationCompleteExists: !!onVerificationComplete,
-          onFileNameUpdateExists: !!onFileNameUpdate
-        });
-        
-        console.log('✅ Single location verification complete:', result);
-        
       } catch (error) {
-        console.error('❌ Error processing single location:', error);
+        console.error('Error processing single location:', error);
         alert('Error processing location. Please try again.');
       } finally {
         setIsGeocoding(false);
@@ -450,10 +359,8 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
       setVerificationResults(updatedVerification);
       onVerificationComplete(updatedVerification);
       
-      console.log(`✅ Location ${locationId} ${action}d successfully`);
-      
     } catch (error) {
-      console.error(`❌ Error ${action}ing location:`, error);
+      console.error(`Error ${action}ing location:`, error);
       alert(`Error ${action}ing location. Please try again.`);
     } finally {
       setLoadingActions(prev => ({ ...prev, [locationId]: null }));
@@ -525,13 +432,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
   }
 
   if (verificationResults) {
-    console.log('🔍 RENDERING VERIFICATION RESULTS:', {
-      verificationResults: verificationResults,
-      manualReviewCount: verificationResults.manualReviewCount,
-      hasOnContinue: !!onContinue,
-      shouldShowContinueButton: !!onContinue
-    });
-
     const manualReviewResults = verificationResults.results.filter(r => r.status === 'manual-review');
 
     return (
@@ -555,22 +455,8 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                 </p>
               </div>
               <button
-                type="button"
-                onClick={(e) => {
-                  console.log('🔵 Continue to Pricing button clicked!', {
-                    onContinueExists: !!onContinue,
-                    event: e,
-                    timestamp: new Date().toISOString()
-                  });
-                  if (onContinue) {
-                    onContinue();
-                    console.log('🔵 onContinue callback invoked successfully');
-                  } else {
-                    console.error('🔴 onContinue callback is not defined!');
-                  }
-                }}
-                className="px-8 py-4 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors cursor-pointer pointer-events-auto"
-                style={{ pointerEvents: 'auto' }}
+                onClick={onContinue}
+                className="px-8 py-4 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Continue to Pricing →
               </button>
@@ -798,19 +684,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
               </table>
             </div>
           </div>
-
-
-          {/* Manual Review Optional Message */}
-          {verificationResults.manualReviewCount > 0 && (
-            <div className="p-6 border-t border-gray-200 bg-yellow-50">
-              <div className="flex items-center">
-                <AlertTriangle className="w-5 h-5 text-yellow-600 mr-3" />
-                <p className="text-sm text-yellow-800">
-                  {verificationResults.manualReviewCount} location(s) flagged for manual review. You can approve/reject them above or continue to pricing setup.
-                </p>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Confirmation Dialog */}
@@ -1088,6 +961,21 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                 </div>
 
                 <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={handleSingleLocationSubmit}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Verify Location
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
                   <button
                     onClick={handleSingleLocationSubmit}
                     className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
