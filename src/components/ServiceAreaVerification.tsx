@@ -832,7 +832,6 @@ export function ServiceAreaVerification({
     <span className="mr-1">👆</span>
     Click to scroll to this location in the results below
   </p>
-</div>
 
   
                       {/* Footer with action guidance */}
