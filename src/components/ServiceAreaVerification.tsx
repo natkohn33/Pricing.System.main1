@@ -820,9 +820,7 @@ export function ServiceAreaVerification({
     <span className="text-xs text-yellow-700 font-medium">
       Click to View
     </span>
-    </div> 
-</div>
-<                      
+    </div>               
 
   {/* Footer with action guidance */}
   <div className="mt-4 pt-3 border-t border-yellow-200">
