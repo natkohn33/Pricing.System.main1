@@ -641,6 +641,33 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
           </div>
         </div>
       )}
+      {/* Display Verified Locations */}
+      {verifiedServiceableLocations.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Verified Serviceable Locations</h2>
+          <div className="flex flex-wrap gap-2">
+            {verifiedServiceableLocations.map((location, index) => (
+              <span key={index} className="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
+                {location.city}, {location.state} {location.zipCode}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {verifiedNotServiceableLocations.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Verified Non-Serviceable Locations</h2>
+          <div className="flex flex-wrap gap-2">
+            {verifiedNotServiceableLocations.map((location, index) => (
+              <span key={index} className="inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/20">
+                {location.city}, {location.state} {location.zipCode}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
