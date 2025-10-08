@@ -836,27 +836,21 @@ export function ServiceAreaVerification({
         )}
       </div>
 
-      <div className="ml-3 flex-shrink-0">
-        <div className="flex flex-col items-center space-y-2">
-          <AlertCircle className="h-6 w-6 text-yellow-600" />
-          <span className="text-xs text-yellow-700 font-medium">
-            Click to View
-          </span>
+      
+          {/* Continue Button */}
+          {verificationResults.serviceableCount > 0 && (
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={onContinue}
+                className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors"
+              >
+                Continue to Pricing Setup
+                <ArrowRight className="h-5 w-5 ml-2" />
+              </button>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
-
-    {/* Hover indicator */}
-    <div className="mt-2 pt-2 border-t border-yellow-200 opacity-0 group-hover/item:opacity-100 transition-opacity">
-      <p className="text-xs text-yellow-600 flex items-center">
-        <span className="mr-1">👆</span>
-        Click to scroll to this location in the results below
-      </p>
-    </div>
-
-    {/* Tooltip arrow */}
-    <div className="absolute top-full left-8 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-yellow-300" />
-    
-  )}
-
-export default ServiceAreaVerification;
+  );
+}
