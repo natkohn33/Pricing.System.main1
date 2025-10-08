@@ -838,4 +838,4 @@ export function ServiceAreaVerification({
       <span className="font-medium">💡 Tip:</span> Click on any location above to jump to its details in the verification results
     </p>
   </div>
-              </React.Fragment>
+</React.Fragment>
