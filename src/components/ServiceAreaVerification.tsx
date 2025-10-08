@@ -985,7 +985,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                 </div>
               </div>
             </div>
-          )}
         </div>
       </div>
     </div>
