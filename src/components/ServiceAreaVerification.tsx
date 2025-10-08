@@ -822,7 +822,7 @@ export function ServiceAreaVerification({
     </span>
     </div> 
 </div>
-</div> 
+
 
 <> 
 </div>
