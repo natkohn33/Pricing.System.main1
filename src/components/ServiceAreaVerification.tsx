@@ -1,11 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ServiceAreaVerificationData, ServiceAreaResult } from '../types';
+import { ServiceAreaValidator, parseLocationRequestsFromData, convertStateAbbreviation } from '../utils/serviceAreaValidator';
 import { parseExcelFile, isExcelFile } from '../utils/excelParser';
 import { parseCSV } from '../utils/csvParser';
-import { ServiceAreaValidator } from '../utils/serviceAreaValidator';
 import { geocodeAddress, GeocodingResult } from '../utils/mapboxGeocoding';
 import { FileUpload } from './FileUpload';
-import { MapPin, Upload, CheckCircle, XCircle, AlertTriangle, ArrowRight, Plus, Trash2, ThumbsUp, ThumbsDown, Loader2 } from 'lucide-react';
+import { formatCurrency, formatPercentage, formatStatus, formatContainerSize, formatNumber } from '../utils/formatters';
+import { MapPin, Upload, Download, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { CONTAINER_SIZES, FREQUENCY_OPTIONS, EQUIPMENT_TYPES, MATERIAL_TYPES } from '../data/divisions';
 
 interface ServiceAreaVerificationProps {
@@ -15,13 +16,29 @@ interface ServiceAreaVerificationProps {
 }
 
 export function ServiceAreaVerification({ onVerificationComplete, onContinue, onFileNameUpdate }: ServiceAreaVerificationProps) {
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [verificationResults, setVerificationResults] = useState<ServiceAreaVerificationData | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingProgress, setProcessingProgress] = useState(0);
-  const [showSingleLocationForm, setShowSingleLocationForm] = useState(false);
-  const [autocomplete, setAutocomplete] = useState<google.maps.places.Autocomplete | null>(null);
-  const [addressInputRef, setAddressInputRef] = useState<HTMLInputElement | null>(null);
+  const [verificationMode, setVerificationMode] = useState<'single' | 'bulk'>('single');
+  const [editableResults, setEditableResults] = useState<ServiceAreaResult[]>([]);
+  const [hasManualOverrides, setHasManualOverrides] = useState(false);
+  const [singleLocationData, setSingleLocationData] = useState({
+    address: '',
+    city: '',
+    state: 'TX',
+    zipCode: '',
+    companyName: '',
+    equipmentType: 'Front-Load Container',
+    containerSize: '',
+    frequency: '',
+    materialType: 'Solid Waste',
+    binQuantity: 1,
+    latitude: null as number | null,
+    longitude: null as number | null
+  });
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [results, setResults] = useState<ServiceAreaResult[]>([]);
+  const [processing, setProcessing] = useState(false);
+  const [validator] = useState(() => new ServiceAreaValidator());
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState('Loading service area data...');
 
   // Geocoding state
   const [isGeocoding, setIsGeocoding] = useState(false);
@@ -161,27 +178,111 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
     return CONTAINER_SIZES;
   };
 
-  const handleFileUpload = useCallback(async (file: File) => {
-    setUploadedFile(file);
-    onFileNameUpdate(file.name);
-    
-    setIsProcessing(true);
-    setProcessingProgress(0);
-    
+ const loadServiceAreaData = async () => {
     try {
-      let data: string[][];
+      setLoadingStatus('Loading GeoJSON polygon data...');
       
-      if (isExcelFile(file)) {
-        const excelResult = await parseExcelFile(file);
-        data = excelResult.data;
-      } else {
-        const text = await file.text();
-        data = parseCSV(text);
+      // Load GeoJSON data
+      const geoJsonResponse = await fetch('/data/division-polygons.json');
+      if (!geoJsonResponse.ok) {
+        throw new Error(`Failed to load GeoJSON: ${geoJsonResponse.status} ${geoJsonResponse.statusText}`);
       }
       
-      // Parse location requests
-      const locationRequests = validator.parseLocationRequestsFromData(data, file.name);
+      const geoJsonText = await geoJsonResponse.text();
+      let geoJsonData;
+      try {
+        geoJsonData = JSON.parse(geoJsonText);
+      } catch (parseError) {
+        console.error('❌ GeoJSON parse error:', parseError);
+        console.error('❌ Response text:', geoJsonText.substring(0, 200));
+        throw new Error(`Invalid GeoJSON format: ${parseError instanceof Error ? parseError.message : 'Unknown parse error'}`);
+      }
       
+      validator.setGeoJsonData(geoJsonData);
+      
+      setLoadingStatus('Loading service boundaries CSV...');
+      
+      // Load CSV data
+      const csvResponse = await fetch('/data/service-areas.csv');
+      if (!csvResponse.ok) {
+        throw new Error(`Failed to load CSV: ${csvResponse.status} ${csvResponse.statusText}`);
+      }
+      const csvText = await csvResponse.text();
+      
+      // Validate CSV content
+      if (csvText.trim().startsWith('<!DOCTYPE') || csvText.trim().startsWith('<html')) {
+        throw new Error('CSV file returned HTML content - check file path');
+      }
+      
+      const csvData = parseServiceBoundariesCSV(csvText);
+      validator.setServiceBoundaries(csvData);
+      
+      setLoadingStatus('Loading franchise fee data...');
+      
+      // Load franchise fee data
+      const franchiseFeeResponse = await fetch('/data/FF - Sheet1 copy copy.csv');
+      if (!franchiseFeeResponse.ok) {
+        console.warn('⚠️ Franchise fee data not found, continuing without city-specific fees');
+      } else {
+        const franchiseFeeText = await franchiseFeeResponse.text();
+        const franchiseFeeData = parseFranchiseFeeCSV(franchiseFeeText);
+        validator.setFranchiseFeeData(franchiseFeeData);
+        console.log('✅ Franchise fee data loaded:', franchiseFeeData);
+      }
+      
+      setDataLoaded(true);
+      setLoadingStatus('Service area data loaded successfully');
+      
+      console.log('✅ Service area data loaded successfully');
+    } catch (error) {
+      console.error('❌ Error loading service area data:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setLoadingStatus(`Error loading data: ${errorMessage}`);
+      
+      // Show user-friendly error in the UI
+      setDataLoaded(false);
+    }
+  };
+
+  const parseServiceBoundariesCSV = (csvText: string): any[] => {
+    const lines = csvText.split('\n');
+    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+    
+    return lines.slice(1)
+      .filter(line => line.trim())
+      .map(line => {
+        const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+        const row: any = {};
+        
+        headers.forEach((header, i) => {
+          row[header.toLowerCase().replace(/[^a-z0-9]/g, '')] = values[i] || '';
+        });
+        
+        return row;
+      });
+  };
+
+  const parseFranchiseFeeCSV = (csvText: string): Record<string, number> => {
+    const lines = csvText.split('\n');
+    const franchiseFeeMap: Record<string, number> = {};
+    
+    // Skip header row and process data
+    lines.slice(1).forEach(line => {
+      if (!line.trim()) return;
+      
+      const [city, franchiseFee] = line.split(',').map(v => v.trim().replace(/"/g, ''));
+      if (city && franchiseFee) {
+        // Parse percentage value (remove % symbol and convert to number)
+        const feeValue = parseFloat(franchiseFee.replace('%', '')) || 0;
+        const normalizedCity = city.toLowerCase().trim();
+        franchiseFeeMap[normalizedCity] = feeValue;
+        
+        console.log(`📊 Franchise fee loaded: ${city} -> ${feeValue}%`);
+      }
+    });
+    
+    return franchiseFeeMap;
+  };
       // Geocode all addresses before processing
       setGeocodingProgress(0);
       
@@ -213,12 +314,7 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
         }
       }
       
-      // Process each location
-      const results: ServiceAreaResult[] = [];
-      
-      for (let i = 0; i < locationRequests.length; i++) {
-        const request = locationRequests[i];
-        setProcessingProgress(50 + Math.round(((i + 1) / locationRequests.length) * 50)); // Second 50% for validation
+  };
         
         const result = await validator.validateLocation(
           request.id,
@@ -328,26 +424,150 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
     processLocation();
   };
 
-  const handleManualReviewAction = async (locationId: string, action: 'approve' | 'reject') => {
-    if (!verificationResults) return;
-    
-    setLoadingActions(prev => ({ ...prev, [locationId]: action === 'approve' ? 'approving' : 'rejecting' }));
-    
-    try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const updatedResults = verificationResults.results.map(result => {
-        if (result.id === locationId) {
-          return {
-            ...result,
-            status: action === 'approve' ? 'serviceable' as const : 'not-serviceable' as const,
-            reason: action === 'approve' ? 'Manually approved' : 'Manually rejected'
-          };
-        }
-        return result;
-      });
-      
+   {/* Bulk Upload Mode */}
+      {verificationMode === 'bulk' && (
+        <div className="bg-white border border-gray-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Bulk Location Verification</h3>
+          
+          <FileUpload
+            onFileUpload={setBulkFile}
+            title="Upload Location File"
+            description="Upload CSV or Excel file with location data (include latitude/longitude columns for best results)"
+            uploadedFile={bulkFile}
+            onClearFile={clearBulkFile}
+          />
+
+          {bulkFile && (
+            <div className="mt-4">
+              <button
+                onClick={handleBulkVerification}
+                disabled={processing || !dataLoaded}
+                className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              >
+                {processing ? (
+                  <>
+                    <div className="animate-spin -ml-1 mr-3 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Verify All Locations
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Results */}
+      {editableResults.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Verification Results</h3>
+            <div className="flex space-x-3">
+              {hasManualOverrides && (
+                <button
+                  onClick={applyManualOverrides}
+                  className="inline-flex items-center px-3 py-2 border border-green-300 text-sm font-medium rounded-md text-green-700 bg-green-50 hover:bg-green-100 transition-colors"
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Apply Changes
+                </button>
+              )}
+              <button
+                onClick={exportResults}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export Results
+              </button>
+            </div>
+          </div>
+
+          {hasManualOverrides && (
+            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+              <p className="text-sm text-yellow-800 font-medium">
+                ⚠️ You have made manual changes to the verification results. Click "Apply Changes" to update the verification data.
+              </p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="text-center p-4 bg-blue-50 rounded-lg">
+              <div className="text-2xl font-bold text-blue-600">{editableResults.length}</div>
+              <div className="text-sm text-blue-700">Total Processed</div>
+            </div>
+            <div className="text-center p-4 bg-green-50 rounded-lg">
+              <div className="text-2xl font-bold text-green-600">
+                {editableResults.filter(r => r.status === 'serviceable').length}
+              </div>
+              <div className="text-sm text-green-700">Serviceable</div>
+            </div>
+            <div className="text-center p-4 bg-yellow-50 rounded-lg">
+              <div className="text-2xl font-bold text-yellow-600">
+                {editableResults.filter(r => r.status === 'manual-review').length}
+              </div>
+              <div className="text-sm text-yellow-700">Manual Review</div>
+            </div>
+            <div className="text-center p-4 bg-red-50 rounded-lg">
+              <div className="text-2xl font-bold text-red-600">
+                {editableResults.filter(r => r.status === 'not-serviceable').length}
+              </div>
+              <div className="text-sm text-red-700">Not Serviceable</div>
+            </div>
+          </div>
+
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {editableResults.map((result) => (
+              <div
+                key={result.id}
+                className={`p-4 rounded-lg border ${
+                  result.status === 'serviceable'
+                    ? 'bg-green-50 border-green-200'
+                    : result.status === 'manual-review'
+                    ? 'bg-yellow-50 border-yellow-200'
+                    : 'bg-red-50 border-red-200'
+                }`}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1">
+                    <div className="flex items-center mb-2">
+                      {result.status === 'serviceable' ? (
+                        <CheckCircle className="h-5 w-5 text-green-600 mr-2" />
+                      ) : result.status === 'manual-review' ? (
+                        <AlertCircle className="h-5 w-5 text-yellow-600 mr-2" />
+                      ) : (
+                        <XCircle className="h-5 w-5 text-red-600 mr-2" />
+                      )}
+                      <h4 className="font-medium text-gray-900">
+                        {result.companyName || 'Unknown Company'}
+                      </h4>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                      <div>
+                        <div className="mb-4">
+                          <h5 className="font-medium text-gray-700 mb-2">Address Information</h5>
+                          <div className="space-y-1 text-gray-600">
+                            <p><span className="font-medium">Street:</span> {result.address}</p>
+                            <p><span className="font-medium">City:</span> {result.city}</p>
+                            <p><span className="font-medium">State:</span> {result.state}</p>
+                            <p><span className="font-medium">Zip Code:</span> {result.zipCode}</p>
+                          </div>
+                        </div>
+                        {(result.latitude && result.longitude) && (
+                          <div className="mb-4">
+                            <h5 className="font-medium text-gray-700 mb-2">Coordinates</h5>
+                            <div className="text-xs text-gray-500 space-y-1">
+                              <p><span className="font-medium">Latitude:</span> {result.latitude.toFixed(6)}</p>
+                              <p><span className="font-medium">Longitude:</span> {result.longitude.toFixed(6)}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div>
       const updatedVerification: ServiceAreaVerificationData = {
         totalProcessed: updatedResults.length,
         serviceableCount: updatedResults.filter(r => r.status === 'serviceable').length,
@@ -686,58 +906,130 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
           </div>
         </div>
 
-        {/* Confirmation Dialog */}
-        {showConfirmDialog && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-              <div className="mt-3 text-center">
-                <div className={`mx-auto flex items-center justify-center h-12 w-12 rounded-full ${
-                  showConfirmDialog.action === 'approve' ? 'bg-green-100' : 'bg-red-100'
-                }`}>
-                  {showConfirmDialog.action === 'approve' ? (
-                    <ThumbsUp className={`h-6 w-6 text-green-600`} />
-                  ) : (
-                    <ThumbsDown className={`h-6 w-6 text-red-600`} />
-                  )}
-                </div>
-                <h3 className="text-lg leading-6 font-medium text-gray-900 mt-4">
-                  {showConfirmDialog.action === 'approve' ? 'Approve Location' : 'Reject Location'}
-                </h3>
-                <div className="mt-2 px-7 py-3">
-                  <p className="text-sm text-gray-500">
-                    Are you sure you want to {showConfirmDialog.action} "{showConfirmDialog.locationName}"?
-                  </p>
-                </div>
-                <div className="items-center px-4 py-3">
-                  <button
-                    onClick={() => handleManualReviewAction(showConfirmDialog.locationId, showConfirmDialog.action)}
-                    className={`px-4 py-2 ${
-                      showConfirmDialog.action === 'approve' 
-                        ? 'bg-green-500 hover:bg-green-600' 
-                        : 'bg-red-500 hover:bg-red-600'
-                    } text-white text-base font-medium rounded-md w-full shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-                      showConfirmDialog.action === 'approve' 
-                        ? 'focus:ring-green-500' 
-                        : 'focus:ring-red-500'
-                    } mr-2`}
-                  >
-                    {showConfirmDialog.action === 'approve' ? 'Approve' : 'Reject'}
-                  </button>
-                  <button
-                    onClick={() => setShowConfirmDialog(null)}
-                    className="mt-3 px-4 py-2 bg-gray-300 text-gray-800 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300"
-                  >
-                    Cancel
-                  </button>
+   {/* Manual Override Button */}
+                  <div className="ml-4">
+                    <button
+                      onClick={() => toggleLocationStatus(result.id)}
+                      className={`inline-flex items-center px-3 py-2 border text-sm font-medium rounded-md transition-colors ${
+                        result.status === 'serviceable'
+                          ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100'
+                          : result.status === 'manual-review'
+                          ? 'border-green-300 text-green-700 bg-green-50 hover:bg-green-100'
+                          : 'border-yellow-300 text-yellow-700 bg-yellow-50 hover:bg-yellow-100'
+                      }`}
+                      data-location-id={result.id}
+                      title={
+                        result.status === 'serviceable' ? 'Mark as not serviceable' : 
+                        result.status === 'manual-review' ? 'Mark as serviceable' :
+                        'Mark for manual review'
+                      }
+                    >
+                      {result.status === 'serviceable' ? (
+                        <>
+                          <XCircle className="h-4 w-4 mr-1" />
+                          Mark Not Serviceable
+                        </>
+                      ) : result.status === 'manual-review' ? (
+                        <>
+                          <CheckCircle className="h-4 w-4 mr-1" />
+                          Mark Serviceable
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="h-4 w-4 mr-1" />
+                          Mark for Review
+                        </>
+                      )}
+                    </button>
+                  </div>
+              Franchised cities (like Mansfield) will use their specific municipal contract pricing automatically.
                 </div>
               </div>
-            </div>
+            ))}
           </div>
-        )}
-      </div>
-    );
-  }
 
+          {editableResults.filter(r => r.status === 'serviceable').length > 0 && (
+            <div className="mt-6 pt-4 border-t border-gray-200">
+              {hasManualOverrides && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                  <p className="text-sm text-blue-800">
+                    <strong>Note:</strong> You have manual overrides pending. Make sure to click "Apply Changes" above to save your modifications before continuing.
+                  </p>
+                </div>
+              )}
+              <button
+                onClick={onContinue}
+                disabled={hasManualOverrides}
+                className={`inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white transition-colors ${
+                  hasManualOverrides 
+                    ? 'bg-gray-400 cursor-not-allowed' 
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                Continue to Pricing Setup
+                <MapPin className="h-5 w-5 ml-2" />
+              </button>
+              
+              {editableResults.filter(r => r.status === 'manual-review').length > 0 && (
+                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md relative group">
+                  <p className="text-sm text-yellow-800">
+                    <strong className="cursor-help">⚠️ Manual Review Required:</strong> {editableResults.filter(r => r.status === 'manual-review').length} location(s) require manual review before proceeding with quote generation.
+                  </p>
+                  
+                  {/* Manual Review Locations Hover Tooltip */}
+                  <div className="absolute bottom-full left-0 mb-2 w-full max-w-4xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 ease-in-out transform translate-y-2 group-hover:translate-y-0 z-50">
+                    <div className="bg-white border-2 border-yellow-300 rounded-lg shadow-xl p-4 max-h-96 overflow-y-auto">
+                      <div className="flex items-center mb-3 pb-2 border-b border-yellow-200">
+                        <AlertCircle className="h-5 w-5 text-yellow-600 mr-2" />
+                        <h4 className="text-lg font-semibold text-yellow-800">
+                          Locations Requiring Manual Review
+                        </h4>
+                        <span className="ml-auto bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full text-sm font-medium">
+                          {editableResults.filter(r => r.status === 'manual-review').length} locations
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        {editableResults
+                          .filter(r => r.status === 'manual-review')
+                          .map((location, index) => (
+                            <div
+                              key={location.id}
+                              data-location-id={location.id}
+                              className="bg-white border border-yellow-200 rounded-lg p-4 shadow-sm"
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center mb-2">
+                                    <div className="w-6 h-6 bg-yellow-200 text-yellow-800 rounded-full flex items-center justify-center text-sm font-bold mr-3 flex-shrink-0">
+                                      {index + 1}
+                                    </div>
+                                    <h5 className="font-semibold text-gray-900 truncate">
+                                      {location.companyName || `Location ${index + 1}`}
+                                    </h5>
+                                  </div>
+                                  
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                    <div>
+                                      <p className="text-gray-600 mb-1">
+                                        <span className="font-medium">Address:</span>
+                                      </p>
+                                      <p className="text-gray-900 leading-tight">
+                                        {location.address}
+                                      </p>
+                                      <p className="text-gray-900">
+                                        {location.city}, {location.state} {location.zipCode}
+                                      </p>
+                                    </div>
+                                    
+                                    <div>
+                                      <p className="text-gray-600 mb-1">
+                                        <span className="font-medium">Review Reason:</span>
+                                      </p>
+                                      <p className="text-yellow-700 font-medium">
+                                        {location.failureReason || 'Manual review required'}
+                                      </p>
+                                      
   return (
     <div className="max-w-4xl mx-auto p-6">
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
