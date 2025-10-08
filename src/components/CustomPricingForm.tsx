@@ -669,11 +669,7 @@ export function CustomPricingForm({
       {/* Bulk Upload Workflow */}
       {!isSingleLocation && (
         <div className="space-y-6">,
-             />
-              </div>
-   
-          
-          {/* Global Pricing Configuration */}
+       {/* Global Pricing Configuration */}
           <div className="bg-white border border-gray-200 rounded-lg p-6">
             <div className="flex items-center mb-6">
               <Settings className="h-6 w-6 text-gray-600 mr-3" />
