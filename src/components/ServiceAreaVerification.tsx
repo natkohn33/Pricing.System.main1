@@ -446,6 +446,359 @@ export function ServiceAreaVerification({
           {/* Manual Review Section */}
           {manualReviewResults.length > 0 && (
             <div className="p-6 border-b border-gray-200">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Locations for Manual Review ({manualReviewResults.length})</h3>
+              <div className="space-y-4">
+                {manualReviewResults.map(result => (
+                  <div key={result.id} className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-yellow-800">{result.companyName || 'N/A'}</p>
+                        <p className="text-sm text-gray-600">{result.address}, {result.city}, {result.state} {result.zipCode}</p>
+                        <p className="text-sm text-yellow-700 mt-1">Reason: {result.reason}</p>
+                      </div>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => setShowConfirmDialog({ isOpen: true, locationId: result.id, action: 'approve', locationName: `${result.companyName || 'N/A'} (${result.address})` })}
+                          disabled={loadingActions[result.id] !== null}
+                          className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {loadingActions[result.id] === 'approving' ? (
+                            <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                          ) : (
+                            <ThumbsUp className="w-3 h-3 mr-1" />
+                          )}
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => setShowConfirmDialog({ isOpen: true, locationId: result.id, action: 'reject', locationName: `${result.companyName || 'N/A'} (${result.address})` })}
+                          disabled={loadingActions[result.id] !== null}
+                          className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {loadingActions[result.id] === 'rejecting' ? (
+                            <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                          ) : (
+                            <ThumbsDown className="w-3 h-3 mr-1" />
+                          )}
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* All Results Section */}
+          <div className="p-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">All Locations ({verificationResults.totalProcessed})</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company Name</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {verificationResults.results.map(result => (
+                    <tr key={result.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{result.companyName || 'N/A'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{result.address}, {result.city}, {result.state} {result.zipCode}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(result.status)}`}>
+                          {getStatusIcon(result.status)} {result.status.replace('-', ' ')}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{result.reason || 'N/A'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Confirmation Dialog */}
+        {showConfirmDialog && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+              <div className="mt-3 text-center">
+                <div className={`mx-auto flex items-center justify-center h-12 w-12 rounded-full ${
+                  showConfirmDialog.action === 'approve' ? 'bg-green-100' : 'bg-red-100'
+                }`}>
+                  {showConfirmDialog.action === 'approve' ? (
+                    <ThumbsUp className="h-6 w-6 text-green-600" />
+                  ) : (
+                    <ThumbsDown className="h-6 w-6 text-red-600" />
+                  )}
+                </div>
+                <h3 className="text-lg leading-6 font-medium text-gray-900 mt-4">
+                  {showConfirmDialog.action === 'approve' ? 'Approve Location' : 'Reject Location'}
+                </h3>
+                <div className="mt-2 px-7 py-3">
+                  <p className="text-sm text-gray-500">
+                    Are you sure you want to {showConfirmDialog.action} "{showConfirmDialog.locationName}"?
+                  </p>
+                </div>
+                <div className="items-center px-4 py-3">
+                  <button
+                    onClick={() => handleManualReviewAction(showConfirmDialog.locationId, showConfirmDialog.action)}
+                    className={`px-4 py-2 ${
+                      showConfirmDialog.action === 'approve' 
+                        ? 'bg-green-500 hover:bg-green-600' 
+                        : 'bg-red-500 hover:bg-red-600'
+                    } text-white text-base font-medium rounded-md w-full shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                      showConfirmDialog.action === 'approve' 
+                        ? 'focus:ring-green-500' 
+                        : 'focus:ring-red-500'
+                    }`}
+                  >
+                    {showConfirmDialog.action === 'approve' ? 'Approve' : 'Reject'}
+                  </button>
+                  <button
+                    onClick={() => setShowConfirmDialog(null)}
+                    className="mt-3 px-4 py-2 bg-gray-300 text-gray-800 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Initial form view
+  return (
+    <div className="max-w-4xl mx-auto p-6">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className="p-6 border-b border-gray-200">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Service Area Verification</h2>
+          <p className="text-gray-600">
+            Upload a file with location data or add a single location to verify service availability.
+          </p>
+        </div>
+
+        <div className="p-6">
+          {!showSingleLocationForm ? (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Upload Location Data</h3>
+                <FileUpload
+                  onFileUpload={handleFileUpload}
+                  accept=".csv,.xlsx,.xls"
+                  title="Upload Location Data"
+                  description="Upload a CSV or Excel file with location data including addresses, company names, and service requirements."
+                />
+              </div>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-white text-gray-500">or</span>
+                </div>
+              </div>
+
+              <div className="text-center">
+                <button
+                  onClick={() => setShowSingleLocationForm(true)}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Single Location
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium text-gray-900">Add Single Location</h3>
+                  <button
+                    onClick={() => setShowSingleLocationForm(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Company Name
+                    </label>
+                    <input
+                      type="text"
+                      value={singleLocationData.companyName}
+                      onChange={(e) => setSingleLocationData(prev => ({ ...prev, companyName: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Enter company name"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Street Address *
+                    </label>
+                    <input
+                      ref={setAddressInputRef}
+                      type="text"
+                      value={singleLocationData.address}
+                      onChange={(e) => setSingleLocationData(prev => ({ ...prev, address: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Enter street address"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      City *
+                    </label>
+                    <input
+                      type="text"
+                      value={singleLocationData.city}
+                      onChange={(e) => setSingleLocationData(prev => ({ ...prev, city: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Enter city"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      State
+                    </label>
+                    <select
+                      value={singleLocationData.state}
+                      onChange={(e) => setSingleLocationData(prev => ({ ...prev, state: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="Texas">Texas</option>
+                      <option value="Oklahoma">Oklahoma</option>
+                      <option value="Arkansas">Arkansas</option>
+                      <option value="Louisiana">Louisiana</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      ZIP Code
+                    </label>
+                    <input
+                      type="text"
+                      value={singleLocationData.zipCode}
+                      onChange={(e) => setSingleLocationData(prev => ({ ...prev, zipCode: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Enter ZIP code"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Equipment Type
+                    </label>
+                    <select
+                      value={singleLocationData.equipmentType}
+                      onChange={(e) => {
+                        setSingleLocationData(prev => ({ 
+                          ...prev, 
+                          equipmentType: e.target.value,
+                          containerSize: '8YD'
+                        }));
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      {EQUIPMENT_TYPES.map(type => (
+                        <option key={type.value} value={type.value}>{type.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Container Size
+                    </label>
+                    <select
+                      value={singleLocationData.containerSize}
+                      onChange={(e) => setSingleLocationData(prev => ({ ...prev, containerSize: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      {getContainerSizeOptions().map(size => (
+                        <option key={size.value} value={size.value}>{size.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Service Frequency
+                    </label>
+                    <select
+                      value={singleLocationData.frequency}
+                      onChange={(e) => setSingleLocationData(prev => ({ ...prev, frequency: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      {FREQUENCY_OPTIONS.map(freq => (
+                        <option key={freq.value} value={freq.value}>{freq.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Material Type
+                    </label>
+                    <select
+                      value={singleLocationData.materialType}
+                      onChange={(e) => setSingleLocationData(prev => ({ ...prev, materialType: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      {MATERIAL_TYPES.map(material => (
+                        <option key={material.value} value={material.value}>{material.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Bin Quantity
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={singleLocationData.binQuantity}
+                      onChange={(e) => setSingleLocationData(prev => ({ ...prev, binQuantity: parseInt(e.target.value) || 1 }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={handleSingleLocationSubmit}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Verify Location
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+200">
               <h3 className="text-lg font-medium text-gray-900 mb-4">
                 Locations Requiring Manual Review ({manualReviewResults.length})
               </h3>
@@ -795,3 +1148,23 @@ export function ServiceAreaVerification({
     </div>
   );
 }
+
+
+          {/* Continue Button */}
+          {verificationResults.serviceableCount > 0 && (
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={onContinue}
+                className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors"
+              >
+                Continue to Pricing Setup
+                <ArrowRight className="h-5 w-5 ml-2" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
