@@ -2,6 +2,8 @@ import React from 'react';
 import { Dashboard } from './components/Dashboard';
 
 function App() {
+  // The currentView state is not directly used for routing here, as Dashboard handles steps internally.
+  // It's kept for consistency with your original code structure.
   const [currentView, setCurrentView] = React.useState<'dashboard'>('dashboard');
 
   return (
