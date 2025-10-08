@@ -777,6 +777,8 @@ export function CustomPricingForm({
               </div>
             </div>
           </div>
+                </p>
+         
 
           {/* Container-Specific Pricing Rules */}
           <div className="bg-white border border-gray-200 rounded-lg p-6">
