@@ -795,7 +795,7 @@ export function ServiceAreaVerification({
     </div>
   );
 }
-
+<>
   {/* Service Details if available */}
   {(location.equipmentType || location.containerSize || location.frequency) && (
     <div className="mt-2">
