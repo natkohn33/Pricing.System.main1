@@ -833,10 +833,9 @@ export function ServiceAreaVerification({
               )}
             </div>
           </div>
-        )}
-      </div>
-
-      
+        );
+        }
+    
           {/* Continue Button */}
           {verificationResults.serviceableCount > 0 && (
             <div className="mt-6 flex justify-end">
