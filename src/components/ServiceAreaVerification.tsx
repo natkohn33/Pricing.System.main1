@@ -4,7 +4,7 @@ import { parseExcelFile, isExcelFile } from '../utils/excelParser';
 import { parseCSV } from '../utils/csvParser';
 import { geocodeAddress } from '../utils/mapboxGeocoding';
 import { FileUpload } from './FileUpload';
-import { StickyFooterButton } from './StickyFooterButton';
+import { StickyFooterButton } from './StickyFooterButton.tsx';
 import { 
   MapPin, 
   Upload, 
