@@ -658,13 +658,14 @@ export function CustomPricingForm({
                       onChange={(e) => updatePricingConfig('taxExempt', e.target.checked)}
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
-                    <label htmlFor="taxExempt" className="ml-2 block text-sm text-gray-900">
-                      Tax Exempt
-                    </label>
-                  </div>
+                    // ...
+                <label htmlFor="taxExempt" className="ml-2 block text-sm text-gray-900">
+                  Tax Exempt
+                </label>
               </div>
-            <button
-            )}
+            </div>
+          </div>
+// ...
 
       {/* Bulk Upload Workflow */}
       {!isSingleLocation && (
