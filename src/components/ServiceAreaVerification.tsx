@@ -822,8 +822,7 @@ export function ServiceAreaVerification({
     </span>
     </div> 
 </div>
-<
-</div                           <
+<                      <
 
   {/* Footer with action guidance */}
   <div className="mt-4 pt-3 border-t border-yellow-200">
