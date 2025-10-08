@@ -776,8 +776,7 @@ export function CustomPricingForm({
                 />
               </div>
             </div>
-          </div>
-                </p>
+         </p>
          
 
           {/* Container-Specific Pricing Rules */}
