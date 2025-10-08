@@ -666,7 +666,6 @@ export function CustomPricingForm({
             <button
             )}
           </div>
-        </div>
       )}
 
       {/* Bulk Upload Workflow */}
