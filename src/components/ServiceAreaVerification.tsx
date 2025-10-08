@@ -822,8 +822,9 @@ export function ServiceAreaVerification({
     </span>
     </div> 
 </div>
+</div> 
 
-<>
+<div>
   <div className="mt-2 pt-2 border-t border-yellow-200 opacity-0 group-hover/item:opacity-100 transition-opacity">
     {/* Hover indicator */}
     <p className="text-xs text-yellow-600 flex items-center">
@@ -838,10 +839,11 @@ export function ServiceAreaVerification({
       <span className="font-medium">💡 Tip:</span> Click on any location above to jump to its details in the verification results
     </p>
   </div>
-</>
 
-{/* Tooltip arrow */}
-<div className="absolute top-full left-8 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-yellow-300"></div>
+  {/* Tooltip arrow */}
+  <div className="absolute top-full left-8 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-yellow-300"></div>
+</div>
+
 </div>
 </div>
 )}
