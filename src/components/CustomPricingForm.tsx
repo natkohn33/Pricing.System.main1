@@ -684,7 +684,6 @@ export function CustomPricingForm({
                             <p className="text-gray-600 text-sm mt-1">
                   Set default pricing that applies to all locations unless overridden by specific rules
                 </p>
-              </div>
 
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
