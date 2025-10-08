@@ -366,8 +366,8 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
       setIsConfigured(true);
       
       console.log('🧠 Regional pricing brain configured:', {
-        totalSheets: builtInData.rateSheets.length,
-        regions: builtInData.rateSheets.map(s => s.region)
+        totalSheets: regionalData.rateSheets.length,
+        regions: regionalData.rateSheets.map(s => s.region)
       });
       
       // Save regional brain data for persistence
@@ -378,7 +378,7 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
         customRules: [],
         pricingConfig,
         isConfigured: true,
-        regionalPricingData: builtInData
+        regionalPricingData: regionalData
       });
     } catch (error) {
       console.error('Error parsing regional rate sheets:', error);
@@ -405,8 +405,9 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
       updatePricingLogic(logic);
       setIsConfigured(true);
       
+      // Save broker data for persistence
       saveData({
-        selectedOption: 'broker',
+        selectedOption: 'regional-brain',
         brokerFile: file,
         brokerRates: rates,
         customRules: [],
@@ -414,15 +415,41 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
         isConfigured: true
       });
     } catch (error) {
-      console.error('Error parsing broker rate sheet:', error);
-      alert(`Error parsing the broker rate sheet CSV file: ${error instanceof Error ? error.message : 'Unknown error'}. Please check the format and try again.`);
+      console.error('Error parsing broker file:', error);
+      alert(`Error parsing the broker CSV file: ${error instanceof Error ? error.message : 'Unknown error'}. Please check the format and try again.`);
     }
   }, [updatePricingLogic, pricingConfig, saveData]);
 
-  const handleSelectOption = useCallback((option: 'regional-brain' | 'custom') => {
-    setSelectedOption(option);
+  const handleCustomPricingSelection = useCallback(() => {
+    setSelectedOption('custom');
+    setIsConfigured(false); // Reset configured state when switching to custom
+    setRegionalBrainActive(false);
     
-    if (option === 'regional-brain') {
+    const logic: PricingLogic = {
+      type: 'custom',
+      customRules: manualRules,
+      pricingConfig: pricingConfig
+    };
+    updatePricingLogic(logic);
+    
+    // Save data
+    saveData({
+      selectedOption: 'custom',
+      brokerFile: null,
+      brokerRates: [],
+      customRules: manualRules,
+      pricingConfig: pricingConfig,
+      isConfigured: false
+    });
+  }, [manualRules, pricingConfig, updatePricingLogic, saveData]);
+
+  const handleRegionalBrainSelection = useCallback(() => {
+    setSelectedOption('regional-brain');
+    setIsConfigured(false); // Reset configured state when switching to regional brain
+    
+    // Attempt to auto-activate if serviceable locations are already present
+    if (serviceAreaVerification && serviceAreaVerification.serviceableCount > 0) {
+      console.log('🧠 Attempting to auto-activate regional pricing brain on selection');
       const builtInData = getBuiltInRegionalPricingData();
       setRegionalPricingData(builtInData);
       
@@ -432,109 +459,91 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
         regionalPricingData: builtInData,
         customRules: []
       };
-      
       updatePricingLogic(logic);
       setIsConfigured(true);
+      setRegionalBrainActive(true);
       
+      // Save regional brain data for persistence
       saveData({
         selectedOption: 'regional-brain',
         brokerFile: null,
         brokerRates: [],
         customRules: [],
-        pricingConfig,
+        pricingConfig: pricingConfig,
         isConfigured: true,
         regionalPricingData: builtInData
       });
     } else {
+      // If no serviceable locations, keep it unconfigured until a file is uploaded or locations are verified
       const logic: PricingLogic = {
-        type: 'custom',
-        customRules: manualRules,
-        pricingConfig: pricingConfig
+        type: 'regional-brain',
+        brokerRates: [],
+        customRules: []
       };
-      
       updatePricingLogic(logic);
+      setRegionalBrainActive(false);
       
-      const isSingleLocationWorkflow = serviceAreaVerification?.totalProcessed === 1;
-      const hasManualRules = manualRules.length > 0;
-      const newConfigState = isSingleLocationWorkflow ? comprehensiveFormValid : (hasManualRules || comprehensiveFormValid);
-      
-      setIsConfigured(newConfigState);
-      
+      // Save data
       saveData({
-        selectedOption: 'custom',
-        brokerFile: brokerFile,
-        brokerRates: brokerRates,
-        customRules: manualRules,
+        selectedOption: 'regional-brain',
+        brokerFile: null,
+        brokerRates: [],
+        customRules: [],
         pricingConfig: pricingConfig,
-        isConfigured: newConfigState
+        isConfigured: false
       });
     }
-  }, [manualRules, pricingConfig, comprehensiveFormValid, serviceAreaVerification, brokerFile, brokerRates, updatePricingLogic, saveData]);
+  }, [serviceAreaVerification, updatePricingLogic, pricingConfig, saveData]);
 
-  // Effect to update pricing logic when relevant state changes
-  React.useEffect(() => {
-    if (pricingLogicState) {
-      let newLogic = { ...pricingLogicState };
-      if (newLogic.type === 'custom') {
-        newLogic.pricingConfig = pricingConfig;
-        newLogic.customRules = manualRules;
-      }
-      updatePricingLogic(newLogic);
-    }
-  }, [pricingConfig, manualRules, pricingLogicState, updatePricingLogic]);
+  const handleFranchisedCitySupplementaryUpdate = useCallback((data: FranchisedCitySupplementaryPricing) => {
+    setFranchisedCitySupplementary(data);
+    // You might want to update the overall pricing logic here as well
+  }, []);
 
   return (
-    <div className="space-y-8">
-      {serviceAreaVerification && serviceAreaVerification.totalProcessed > 0 && (
-        <div className="mb-8">
-          <LocationsReference
-            serviceable={verifiedServiceableLocations}
-            nonServiceable={verifiedNotServiceableLocations}
-          />
-        </div>
+    <div className="p-6 bg-gray-50 min-h-screen">
+      <h1 className="text-3xl font-bold text-gray-900 mb-6">Pricing Setup</h1>
+
+      {serviceAreaVerification && (
+        <LocationsReference
+          serviceableLocations={verifiedServiceableLocations}
+          notServiceableLocations={verifiedNotServiceableLocations}
+        />
       )}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <div className="flex items-center mb-6">
-          <Settings className="h-6 w-6 text-blue-600 mr-3" />
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Step 1: Choose Your Pricing Logic</h3>
-            <p className="text-gray-600 mt-1">Configure your pricing logic using manual rules and optional advanced settings.</p>
-          </div>
-        </div>
+
+      <div className="bg-white shadow-md rounded-lg p-6 mb-8">
+        <h2 className="text-2xl font-semibold text-gray-800 mb-4">Step 1: Choose Your Pricing Logic</h2>
+        <p className="text-gray-600 mb-6">Configure your pricing logic using manual rules and optional advanced settings.</p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Regional Pricing Brain */}
-          <div 
-            onClick={() => handleSelectOption('regional-brain')}
-            className={`p-6 rounded-lg border-2 cursor-pointer transition-all duration-200 ${selectedOption === 'regional-brain' ? 'border-blue-600 bg-blue-50' : 'border-gray-300 bg-white hover:border-blue-500'}`}
+          {/* Regional Pricing Brain Card */}
+          <div
+            className={`border rounded-lg p-6 cursor-pointer transition-all duration-200 ${selectedOption === 'regional-brain' ? 'border-blue-500 shadow-lg' : 'border-gray-300 hover:border-gray-400'}`}
+            onClick={handleRegionalBrainSelection}
           >
-            <div className="flex items-center mb-4">
-              <Brain className={`h-8 w-8 mr-4 ${selectedOption === 'regional-brain' ? 'text-blue-600' : 'text-gray-500'}`} />
-              <div>
-                <h4 className="text-lg font-bold text-gray-900">Regional Pricing Brain</h4>
-                <p className="text-sm text-gray-600">Will auto-activate when serviceable locations are detected</p>
-              </div>
+            <div className="flex items-center mb-3">
+              <Brain className="h-6 w-6 text-blue-600 mr-3" />
+              <h3 className="text-xl font-semibold text-gray-800">Regional Pricing Brain</h3>
             </div>
-            <ul className="space-y-2 text-sm text-gray-700 pl-2">
+            <p className="text-gray-600 mb-4">Will auto-activate when serviceable locations are detected</p>
+            <ul className="list-disc list-inside text-gray-600 space-y-1">
               <li>• NTX Rate Sheet: Dallas/Fort Worth region</li>
               <li>• CTX Rate Sheet: San Antonio/San Marcos/Austin region</li>
               <li>• STX Rate Sheet: Houston region</li>
             </ul>
           </div>
 
-          {/* Custom Pricing */}
-          <div 
-            onClick={() => handleSelectOption('custom')}
-            className={`p-6 rounded-lg border-2 cursor-pointer transition-all duration-200 ${selectedOption === 'custom' ? 'border-blue-600 bg-blue-50' : 'border-gray-300 bg-white hover:border-blue-500'}`}
+          {/* Custom Pricing Card */}
+          <div
+            className={`border rounded-lg p-6 cursor-pointer transition-all duration-200 ${selectedOption === 'custom' ? 'border-blue-500 shadow-lg' : 'border-gray-300 hover:border-gray-400'}`}
+            onClick={handleCustomPricingSelection}
           >
-            <div className="flex items-center mb-4">
-              <DollarSign className={`h-8 w-8 mr-4 ${selectedOption === 'custom' ? 'text-blue-600' : 'text-gray-500'}`} />
-              <div>
-                <h4 className="text-lg font-bold text-gray-900">Custom Pricing</h4>
-                <p className="text-sm text-gray-600">Create your own pricing rules</p>
-              </div>
+            <div className="flex items-center mb-3">
+              <DollarSign className="h-6 w-6 text-green-600 mr-3" />
+              <h3 className="text-xl font-semibold text-gray-800">Custom Pricing</h3>
             </div>
-            <ul className="space-y-2 text-sm text-gray-700 pl-2">
+            <p className="text-gray-600 mb-4">Create your own pricing rules</p>
+            <ul className="list-disc list-inside text-gray-600 space-y-1">
               <li>• Set container-specific pricing</li>
               <li>• Configure frequency discounts</li>
               <li>• Add custom fees and surcharges</li>
@@ -545,9 +554,12 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
         {selectedOption === 'custom' && (
           <div className="mt-8">
             <CustomPricingForm
-              initialConfig={pricingConfig}
-              onUpdate={handlePricingConfigUpdate}
+              initialRules={manualRules}
+              onRulesUpdate={handleManualRulesUpdate}
               serviceAreaVerification={serviceAreaVerification}
+              isSingleLocation={isSingleLocation}
+              pricingConfig={pricingConfig}
+              onPricingConfigUpdate={handlePricingConfigUpdate}
             />
           </div>
         )}
