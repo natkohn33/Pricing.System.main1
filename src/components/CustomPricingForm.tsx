@@ -38,7 +38,13 @@ export function CustomPricingForm({
   onApplyPricingConfig
 }: CustomPricingFormProps) {
   // Ensure pricingConfig is always a valid object
-  const pricingConfig = rawPricingConfig || DEFAULT_PRICING_CONFIG;
+  // Ensure pricingConfig is always a valid object, using a deep merge for initial values
+  const pricingConfig = React.useMemo(() => {
+    if (rawPricingConfig) {
+      return { ...DEFAULT_PRICING_CONFIG, ...rawPricingConfig };
+    }
+    return DEFAULT_PRICING_CONFIG;
+  }, [rawPricingConfig]);
   
   const [rules, setRules] = useState<CustomPricingRule[]>(initialRules);
   const [showAdditionalFees, setShowAdditionalFees] = useState(false);
@@ -81,6 +87,13 @@ export function CustomPricingForm({
       setNewRulePricePerYard(pricingConfig.smallContainerPrice);
     }
   }, [pricingConfig.smallContainerPrice, newRulePricePerYard]);
+
+  // Update local state when pricingConfig prop changes (for parent updates)
+  React.useEffect(() => {
+    if (rawPricingConfig) {
+      onPricingConfigUpdate(pricingConfig, isComprehensiveFormValid(pricingConfig));
+    }
+  }, [pricingConfig, onPricingConfigUpdate]);
   
   // Derive serviceableLocation from serviceAreaVerification prop
   const serviceableLocation = isSingleLocation && serviceAreaVerification 
@@ -422,17 +435,7 @@ export function CustomPricingForm({
     ];
   };
 
-  // Early return if pricingConfig is not available
-  if (!rawPricingConfig) {
-    return (
-      <div className="space-y-6">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-          <div className="flex items-center">
-            <Settings className="h-6 w-6 text-yellow-600 mr-3" />
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Loading Pricing Configuration</h3>
-              <p className="text-yellow-700 text-sm mt-1">
-                Please wait while the pricing configuration is being initialized...
+onfiguration is being initialized...
               </p>
             </div>
           </div>
