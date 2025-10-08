@@ -812,7 +812,7 @@ export function ServiceAreaVerification({
     {location.materialType && (
       <div>Material: {location.materialType}</div>
     )}
-  </>
+  </div>
 )}
                                                
                             
