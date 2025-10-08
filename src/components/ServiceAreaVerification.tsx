@@ -833,8 +833,9 @@ export function ServiceAreaVerification({
               )}
             </div>
           </div>
-        )},
+        )};
           </div>
+      ,
     
           {/* Continue Button */}
           {verificationResults.serviceableCount > 0 && (
