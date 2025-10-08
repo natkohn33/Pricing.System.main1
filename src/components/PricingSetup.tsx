@@ -76,11 +76,6 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
     return savedData?.pricingConfig ? { ...defaultPricingConfig, ...savedData.pricingConfig } : defaultPricingConfig;
   });
 
-
-    additionalFees: [],
-    containerSpecificPricingRules: [],
-  });
-
   // Add state to track current pricing logic
   const [pricingLogicState, setPricingLogicState] = useState<PricingLogic | null>(null);
 
@@ -371,8 +366,8 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
       setIsConfigured(true);
       
       console.log('🧠 Regional pricing brain configured:', {
-        totalSheets: regionalData.rateSheets.length,
-        regions: regionalData.rateSheets.map(s => s.region)
+        totalSheets: builtInData.rateSheets.length,
+        regions: builtInData.rateSheets.map(s => s.region)
       });
       
       // Save regional brain data for persistence
@@ -383,7 +378,7 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
         customRules: [],
         pricingConfig,
         isConfigured: true,
-        regionalPricingData: regionalData
+        regionalPricingData: builtInData
       });
     } catch (error) {
       console.error('Error parsing regional rate sheets:', error);
@@ -410,74 +405,83 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
       updatePricingLogic(logic);
       setIsConfigured(true);
       
-      // Save broker data for persistence
       saveData({
-        ...savedData,
         selectedOption: 'broker',
         brokerFile: file,
         brokerRates: rates,
         customRules: [],
+        pricingConfig,
         isConfigured: true
       });
     } catch (error) {
-      console.error('Error parsing broker rates:', error);
-      alert('Error parsing the CSV file. Please check the format and try again.');
+      console.error('Error parsing broker rate sheet:', error);
+      alert(`Error parsing the broker rate sheet CSV file: ${error instanceof Error ? error.message : 'Unknown error'}. Please check the format and try again.`);
     }
-  }, [updatePricingLogic, saveData, savedData]);
+  }, [updatePricingLogic, pricingConfig, saveData]);
 
-  const handleDivisionToggle = useCallback((enabled: boolean) => {
-    setEnableDivisionPricing(enabled);
-    if (!enabled) {
-      setSelectedDivisions([]);
-    }
-  }, []);
-
-  const handleDivisionSelection = useCallback((division: string) => {
-    setSelectedDivisions(prev => {
-      if (prev.includes(division)) {
-        return prev.filter(d => d !== division);
-      } else {
-        return [...prev, division];
-      }
-    });
-  }, []);
-
-  const clearBrokerData = useCallback(() => {
-    setBrokerFile(null);
-    setBrokerRates([]);
-    setIsConfigured(false);
+  const handleSelectOption = useCallback((option: 'regional-brain' | 'custom') => {
+    setSelectedOption(option);
     
-    // Clear saved data
-    saveData({
-      ...savedData,
-      selectedOption: null,
-      brokerFile: null,
-      brokerRates: [],
-      customRules: [],
-      isConfigured: false
-    });
-  }, [saveData, savedData]);
-
-  const handleFranchisedCitySupplementaryUpdate = useCallback((supplementaryPricing: FranchisedCitySupplementaryPricing) => {
-    setFranchisedCitySupplementary(supplementaryPricing);
-    
-    // Update pricing logic to include franchised city supplementary costs
-    if (pricingLogicState) {
-      const updatedLogic: PricingLogic = {
-        ...pricingLogicState,
-        franchisedCitySupplementary: {
-          ...pricingLogicState.franchisedCitySupplementary,
-          [supplementaryPricing.cityName]: supplementaryPricing
-        }
-      };
-      updatePricingLogic(updatedLogic);
+    if (option === 'regional-brain') {
+      const builtInData = getBuiltInRegionalPricingData();
+      setRegionalPricingData(builtInData);
       
-      console.log('🏛️ Updated pricing logic with franchised city supplementary costs:', {
-        cityName: supplementaryPricing.cityName,
-        supplementaryCostsCount: supplementaryPricing.supplementaryCosts.length
+      const logic: PricingLogic = {
+        type: 'regional-brain',
+        brokerRates: [],
+        regionalPricingData: builtInData,
+        customRules: []
+      };
+      
+      updatePricingLogic(logic);
+      setIsConfigured(true);
+      
+      saveData({
+        selectedOption: 'regional-brain',
+        brokerFile: null,
+        brokerRates: [],
+        customRules: [],
+        pricingConfig,
+        isConfigured: true,
+        regionalPricingData: builtInData
+      });
+    } else {
+      const logic: PricingLogic = {
+        type: 'custom',
+        customRules: manualRules,
+        pricingConfig: pricingConfig
+      };
+      
+      updatePricingLogic(logic);
+      
+      const isSingleLocationWorkflow = serviceAreaVerification?.totalProcessed === 1;
+      const hasManualRules = manualRules.length > 0;
+      const newConfigState = isSingleLocationWorkflow ? comprehensiveFormValid : (hasManualRules || comprehensiveFormValid);
+      
+      setIsConfigured(newConfigState);
+      
+      saveData({
+        selectedOption: 'custom',
+        brokerFile: brokerFile,
+        brokerRates: brokerRates,
+        customRules: manualRules,
+        pricingConfig: pricingConfig,
+        isConfigured: newConfigState
       });
     }
-  }, [pricingLogicState, updatePricingLogic]);
+  }, [manualRules, pricingConfig, comprehensiveFormValid, serviceAreaVerification, brokerFile, brokerRates, updatePricingLogic, saveData]);
+
+  // Effect to update pricing logic when relevant state changes
+  React.useEffect(() => {
+    if (pricingLogicState) {
+      let newLogic = { ...pricingLogicState };
+      if (newLogic.type === 'custom') {
+        newLogic.pricingConfig = pricingConfig;
+        newLogic.customRules = manualRules;
+      }
+      updatePricingLogic(newLogic);
+    }
+  }, [pricingConfig, manualRules, pricingLogicState, updatePricingLogic]);
 
   return (
     <div className="space-y-8">
@@ -489,200 +493,92 @@ export function PricingSetup({ onPricingLogicSet, onContinue, serviceAreaVerific
           />
         </div>
       )}
-      {serviceAreaVerification && serviceAreaVerification.totalProcessed > 0 && (
-        <div className="mb-8">
-          <LocationsReference
-            serviceable={verifiedServiceableLocations}
-            nonServiceable={verifiedNotServiceableLocations}
-          />
-        </div>
-      )}
-      {/* Serviceable Locations Reference */}
-      {allVerificationLocations.length > 0 && (
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <div className="flex items-center mb-6">
           <Settings className="h-6 w-6 text-blue-600 mr-3" />
           <div>
             <h3 className="text-lg font-semibold text-gray-900">Step 1: Choose Your Pricing Logic</h3>
-              </p>
-            </div>
-          </div>
-
-          {/* Continue Button - Fixed and Optimized */}
-          <div className="mt-6 flex justify-end">
-            <button
-              onClick={handleContinue}
-              disabled={!isConfigured}
-              className={`inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md transition-colors ${
-                isConfigured
-                  ? 'text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500'
-                  : 'text-gray-400 bg-gray-200 cursor-not-allowed'
-              }`}
-            >
-              Continue to Quote Generation
-              <ArrowRight className="h-5 w-5 ml-2" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {serviceAreaVerification && serviceAreaVerification.totalProcessed > 0 && (
-        <div className="mb-8">
-          <LocationsReference
-            serviceable={verifiedServiceableLocations}
-            nonServiceable={verifiedNotServiceableLocations}
-          />
-        </div>
-      )}
-
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <div className="flex items-center mb-6">
-          <Settings className="h-6 w-6 text-blue-600 mr-3" />
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Step 1: Choose Your Pricing Logic</h3>
-            <p className="text-gray-600 mt-1">
-              Configure your pricing logic using manual rules and optional advanced settings.
-            </p>
+            <p className="text-gray-600 mt-1">Configure your pricing logic using manual rules and optional advanced settings.</p>
           </div>
         </div>
 
-        {/* Pricing Options */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Option 1: Regional Pricing Brain */}
+          {/* Regional Pricing Brain */}
           <div 
-            className={`border-2 rounded-lg p-6 cursor-pointer transition-all ${
-              selectedOption === 'regional-brain' 
-                ? 'border-blue-500 bg-blue-50' 
-                : 'border-gray-200 hover:border-gray-300'
-            }`}
-            onClick={() => setSelectedOption('regional-brain')}
+            onClick={() => handleSelectOption('regional-brain')}
+            className={`p-6 rounded-lg border-2 cursor-pointer transition-all duration-200 ${selectedOption === 'regional-brain' ? 'border-blue-600 bg-blue-50' : 'border-gray-300 bg-white hover:border-blue-500'}`}
           >
             <div className="flex items-center mb-4">
-              <Brain className="h-8 w-8 text-blue-600 mr-3" />
+              <Brain className={`h-8 w-8 mr-4 ${selectedOption === 'regional-brain' ? 'text-blue-600' : 'text-gray-500'}`} />
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Regional Pricing Brain</h3>
-                <p className="text-sm text-gray-600">
-                  {regionalBrainActive ? '✓ Auto-activated for serviceable locations' : 'Will auto-activate when serviceable locations are detected'}
-                </p>
+                <h4 className="text-lg font-bold text-gray-900">Regional Pricing Brain</h4>
+                <p className="text-sm text-gray-600">Will auto-activate when serviceable locations are detected</p>
               </div>
             </div>
-            <div className="space-y-2 text-sm text-gray-700">
-              <p>• NTX Rate Sheet: Dallas/Fort Worth region</p>
-              <p>• CTX Rate Sheet: San Antonio/San Marcos/Austin region</p>
-              <p>• STX Rate Sheet: Houston region</p>
-            </div>
+            <ul className="space-y-2 text-sm text-gray-700 pl-2">
+              <li>• NTX Rate Sheet: Dallas/Fort Worth region</li>
+              <li>• CTX Rate Sheet: San Antonio/San Marcos/Austin region</li>
+              <li>• STX Rate Sheet: Houston region</li>
+            </ul>
           </div>
 
-          {/* Option 2: Custom Pricing */}
+          {/* Custom Pricing */}
           <div 
-            className={`border-2 rounded-lg p-6 cursor-pointer transition-all ${
-              selectedOption === 'custom' 
-                ? 'border-blue-500 bg-blue-50' 
-                : 'border-gray-200 hover:border-gray-300'
-            }`}
-            onClick={() => setSelectedOption('custom')}
+            onClick={() => handleSelectOption('custom')}
+            className={`p-6 rounded-lg border-2 cursor-pointer transition-all duration-200 ${selectedOption === 'custom' ? 'border-blue-600 bg-blue-50' : 'border-gray-300 bg-white hover:border-blue-500'}`}
           >
             <div className="flex items-center mb-4">
-              <DollarSign className="h-8 w-8 text-green-600 mr-3" />
+              <DollarSign className={`h-8 w-8 mr-4 ${selectedOption === 'custom' ? 'text-blue-600' : 'text-gray-500'}`} />
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Custom Pricing</h3>
+                <h4 className="text-lg font-bold text-gray-900">Custom Pricing</h4>
                 <p className="text-sm text-gray-600">Create your own pricing rules</p>
               </div>
             </div>
-            <div className="space-y-2 text-sm text-gray-700">
-              <p>• Set container-specific pricing</p>
-              <p>• Configure frequency discounts</p>
-              <p>• Add custom fees and surcharges</p>
-            </div>
+            <ul className="space-y-2 text-sm text-gray-700 pl-2">
+              <li>• Set container-specific pricing</li>
+              <li>• Configure frequency discounts</li>
+              <li>• Add custom fees and surcharges</li>
+            </ul>
           </div>
         </div>
 
-        {/* Custom Pricing Form */}
         {selectedOption === 'custom' && (
           <div className="mt-8">
             <CustomPricingForm
-              onRulesUpdate={handleManualRulesUpdate}
-              onPricingConfigUpdate={handlePricingConfigUpdate}
+              initialConfig={pricingConfig}
+              onUpdate={handlePricingConfigUpdate}
               serviceAreaVerification={serviceAreaVerification}
-              initialRules={manualRules}
-              pricingConfig={pricingConfig}
             />
-          </div>
-        )}
-
-        {/* Regional Brain File Upload */}
-        {selectedOption === 'regional-brain' && !regionalBrainActive && (
-          <div className="mt-8">
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
-              <div className="text-center">
-                <Brain className="mx-auto h-12 w-12 text-gray-400" />
-                <div className="mt-4">
-                  <h3 className="text-lg font-medium text-gray-900">Upload Regional Rate Sheets</h3>
-                  <p className="mt-2 text-sm text-gray-600">
-                    Upload a CSV file containing regional rate sheets for NTX, CTX, and STX regions
-                  </p>
-                </div>
-                <div className="mt-6">
-                  <FileUpload
-                    onFileUpload={handleRegionalBrainFileUpload}
-                    acceptedTypes=".csv"
-                    maxSize={10}
-                    label="Upload Regional Rate Sheets CSV"
-                  />
-                </div>
-              </div>
-            </div>
           </div>
         )}
       </div>
 
-      {/* Single Location Generate Quotes Button */}
-      {isSingleLocation && showSingleLocationGenerateButton && (isConfigured || savedData?.isConfigured) && (
-        <div className="bg-white border border-green-200 rounded-lg p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Ready to Generate Quote</h3>
-              <p className="text-gray-600">
-                Single location pricing configuration applied. Click "Generate Quote" to proceed to Step 2 and calculate the final pricing.
-              </p>
-            </div>
-            <button
-              onClick={handleContinue}
-              className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors"
-            >
-              Generate Quote
-              <ArrowRight className="h-5 w-5 ml-2" />
-            </button>
-          </div>
+      {isConfigured && (
+        <div className="flex justify-end mt-8">
+          <button 
+            onClick={handleContinue}
+            className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-all duration-200 flex items-center"
+          >
+            Continue to Quote Generation <ArrowRight className="ml-2 h-5 w-5" />
+          </button>
         </div>
       )}
-      {/* Display Verified Locations */}
-      {verifiedServiceableLocations.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Verified Serviceable Locations</h2>
-          <div className="flex flex-wrap gap-2">
-            {verifiedServiceableLocations.map((location, index) => (
-              <span key={index} className="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
-                {location.city}, {location.state} {location.zipCode}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {verifiedNotServiceableLocations.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Verified Non-Serviceable Locations</h2>
-          <div className="flex flex-wrap gap-2">
-            {verifiedNotServiceableLocations.map((location, index) => (
-              <span key={index} className="inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/20">
-                {location.city}, {location.state} {location.zipCode}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
     </div>
   );
+}
+
+function parseCSVWithHeaderDetection(text: string): { headers: string[], data: any[] } {
+  const lines = text.split('\n').filter(line => line.trim() !== '');
+  if (lines.length === 0) {
+    return { headers: [], data: [] };
+  }
+  const headers = lines[0].split(',').map(h => h.trim());
+  const data = lines.slice(1).map(line => {
+    const values = line.split(',');
+    return headers.reduce((obj, header, index) => {
+      obj[header] = values[index] ? values[index].trim() : '';
+      return obj;
+    }, {} as any);
+  });
+  return { headers, data };
 }
