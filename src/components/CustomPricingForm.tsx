@@ -683,7 +683,7 @@ export function CustomPricingForm({
             ))}
           </div>
         </div>
-      ))}
+      )}
 
       {/* Global Pricing Configuration for Bulk Upload */}
       {!isSingleLocation && (
