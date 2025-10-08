@@ -1,35 +1,35 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ServiceAreaValidator } from '../utils/serviceAreaValidator';
 import { parseExcelFile, isExcelFile } from '../utils/excelParser';
 import { parseCSV } from '../utils/csvParser';
 import { geocodeAddress } from '../utils/mapboxGeocoding';
 import { FileUpload } from './FileUpload';
-import { StickyFooterButton } from './StickyFooterButton.tsx'; // Corrected import path
-import {
-  MapPin,
-  Upload,
-  Download,
-  CheckCircle,
-  XCircle,
-  AlertTriangle,
-  Plus,
-  Trash2,
-  ThumbsUp,
-  ThumbsDown,
+import { StickyFooterButton } from './StickyFooterButton';
+import { 
+  MapPin, 
+  Upload, 
+  Download, 
+  CheckCircle, 
+  XCircle, 
+  AlertTriangle, 
+  Plus, 
+  Trash2, 
+  ThumbsUp, 
+  ThumbsDown, 
   Loader2,
   ArrowRight
 } from 'lucide-react';
-import {
-  CONTAINER_SIZES,
-  FREQUENCY_OPTIONS,
-  EQUIPMENT_TYPES,
-  MATERIAL_TYPES
+import { 
+  CONTAINER_SIZES, 
+  FREQUENCY_OPTIONS, 
+  EQUIPMENT_TYPES, 
+  MATERIAL_TYPES 
 } from '../data/divisions';
 
-export function ServiceAreaVerification({
-  onVerificationComplete,
-  onContinue,
-  onFileNameUpdate
+export function ServiceAreaVerification({ 
+  onVerificationComplete, 
+  onContinue, 
+  onFileNameUpdate 
 }) {
   // State Management
   const [uploadedFile, setUploadedFile] = useState(null);
@@ -37,7 +37,6 @@ export function ServiceAreaVerification({
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [showSingleLocationForm, setShowSingleLocationForm] = useState(false);
-  const [addressInputRef, setAddressInputRef] = useState(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
   
   // Manual review state
@@ -58,11 +57,11 @@ export function ServiceAreaVerification({
     binQuantity: 1
   });
 
-  // Initialize validator
-  const validator = new ServiceAreaValidator();
+  // Memoize validator to prevent recreation on every render
+  const validator = useMemo(() => new ServiceAreaValidator(), []);
 
-  // Get container size options based on equipment type
-  const getContainerSizeOptions = () => {
+  // Memoize container size options to prevent recreation on every render
+  const containerSizeOptions = useMemo(() => {
     if (singleLocationData.equipmentType === 'Front-Load Container') {
       return [
         { value: '2YD', label: '2 Yard' },
@@ -89,9 +88,9 @@ export function ServiceAreaVerification({
       ];
     }
     return CONTAINER_SIZES;
-  };
+  }, [singleLocationData.equipmentType]);
 
-  // Handle file upload
+  // Handle file upload with proper error handling and state management
   const handleFileUpload = useCallback(async (file) => {
     setUploadedFile(file);
     if (onFileNameUpdate) onFileNameUpdate(file.name);
@@ -114,7 +113,10 @@ export function ServiceAreaVerification({
       
       // Process each location with geocoding asynchronously
       const results = await Promise.all(locationRequests.map(async (request, index) => {
-        setProcessingProgress(Math.round(((index + 1) / locationRequests.length) * 100));
+        // Update progress in batches to avoid excessive re-renders
+        if (index % 5 === 0 || index === locationRequests.length - 1) {
+          setProcessingProgress(Math.round(((index + 1) / locationRequests.length) * 100));
+        }
         
         let latitude = null;
         let longitude = null;
@@ -169,10 +171,10 @@ export function ServiceAreaVerification({
       setIsProcessing(false);
       setProcessingProgress(0);
     }
-  }, [onVerificationComplete, onFileNameUpdate]);
+  }, [onVerificationComplete, onFileNameUpdate, validator]);
 
   // Handle single location submission
-  const handleSingleLocationSubmit = async () => {
+  const handleSingleLocationSubmit = useCallback(async () => {
     if (!singleLocationData.address || !singleLocationData.city) {
       alert('Please fill in all required fields (Address, City)');
       return;
@@ -233,10 +235,10 @@ export function ServiceAreaVerification({
     } finally {
       setIsGeocoding(false);
     }
-  };
+  }, [singleLocationData, validator, onVerificationComplete, onFileNameUpdate]);
 
-  // Handle manual review action
-  const handleManualReviewAction = async (locationId, action) => {
+  // Handle manual review action with proper state management
+  const handleManualReviewAction = useCallback(async (locationId, action) => {
     if (!verificationResults) return;
     
     setLoadingActions(prev => ({ ...prev, [locationId]: action === 'approve' ? 'approving' : 'rejecting' }));
@@ -273,10 +275,10 @@ export function ServiceAreaVerification({
       setLoadingActions(prev => ({ ...prev, [locationId]: null }));
       setShowConfirmDialog(null);
     }
-  };
+  }, [verificationResults, onVerificationComplete]);
 
-  // Helper functions for status display
-  const getStatusIcon = (status) => {
+  // Memoize helper functions to prevent recreation on every render
+  const getStatusIcon = useCallback((status) => {
     switch (status) {
       case 'serviceable':
         return <CheckCircle className="w-5 h-5 text-green-500" />;
@@ -287,9 +289,9 @@ export function ServiceAreaVerification({
       default:
         return null;
     }
-  };
+  }, []);
 
-  const getStatusColor = (status) => {
+  const getStatusColor = useCallback((status) => {
     switch (status) {
       case 'serviceable':
         return 'text-green-700 bg-green-50 border-green-200';
@@ -300,7 +302,12 @@ export function ServiceAreaVerification({
       default:
         return 'text-gray-700 bg-gray-50 border-gray-200';
     }
-  };
+  }, []);
+
+  // Memoize manual review results to prevent recalculation on every render
+  const manualReviewResults = useMemo(() => {
+    return verificationResults ? verificationResults.results.filter(r => r.status === 'manual-review') : [];
+  }, [verificationResults]);
 
   // Loading states
   if (isProcessing) {
@@ -342,12 +349,8 @@ export function ServiceAreaVerification({
 
   // Results view
   if (verificationResults) {
-    const manualReviewResults = verificationResults.results.filter(r => r.status === 'manual-review');
-
     return (
-      <div className="max-w-6xl mx-auto p-6 pb-24"> {/* Added pb-24 for sticky footer */}
-
-
+      <div className="max-w-6xl mx-auto p-6 pb-24">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           <div className="p-6 border-b border-gray-200">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Service Area Verification Results</h2>
@@ -411,7 +414,12 @@ export function ServiceAreaVerification({
                       </div>
                       <div className="flex space-x-2">
                         <button
-                          onClick={() => setShowConfirmDialog({ isOpen: true, locationId: result.id, action: 'approve', locationName: `${result.companyName || 'N/A'} (${result.address})` })}
+                          onClick={() => setShowConfirmDialog({ 
+                            isOpen: true, 
+                            locationId: result.id, 
+                            action: 'approve', 
+                            locationName: `${result.companyName || 'N/A'} (${result.address})` 
+                          })}
                           disabled={loadingActions[result.id] !== null}
                           className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
@@ -423,7 +431,12 @@ export function ServiceAreaVerification({
                           Approve
                         </button>
                         <button
-                          onClick={() => setShowConfirmDialog({ isOpen: true, locationId: result.id, action: 'reject', locationName: `${result.companyName || 'N/A'} (${result.address})` })}
+                          onClick={() => setShowConfirmDialog({ 
+                            isOpen: true, 
+                            locationId: result.id, 
+                            action: 'reject', 
+                            locationName: `${result.companyName || 'N/A'} (${result.address})` 
+                          })}
                           disabled={loadingActions[result.id] !== null}
                           className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
@@ -608,7 +621,6 @@ export function ServiceAreaVerification({
                       Street Address *
                     </label>
                     <input
-                      ref={setAddressInputRef}
                       type="text"
                       value={singleLocationData.address}
                       onChange={(e) => setSingleLocationData(prev => ({ ...prev, address: e.target.value }))}
@@ -691,7 +703,7 @@ export function ServiceAreaVerification({
                       onChange={(e) => setSingleLocationData(prev => ({ ...prev, containerSize: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     >
-                      {getContainerSizeOptions().map(size => (
+                      {containerSizeOptions.map(size => (
                         <option key={size.value} value={size.value}>{size.label}</option>
                       ))}
                     </select>
