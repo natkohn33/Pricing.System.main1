@@ -1,46 +1,47 @@
-import React, { useState, useCallback } from 'react';
-import { ServiceAreaVerificationData, ServiceAreaResult } from '../types';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { ServiceAreaValidator } from '../utils/serviceAreaValidator';
 import { parseExcelFile, isExcelFile } from '../utils/excelParser';
 import { parseCSV } from '../utils/csvParser';
-import { ServiceAreaValidator } from '../utils/serviceAreaValidator';
-import { geocodeAddress, GeocodingResult } from '../utils/mapboxGeocoding';
+import { geocodeAddress } from '../utils/mapboxGeocoding';
 import { FileUpload } from './FileUpload';
-import { MapPin, Upload, CheckCircle, XCircle, AlertTriangle, ArrowRight, Plus, Trash2, ThumbsUp, ThumbsDown, Loader2, Database } from 'lucide-react';
-import { CONTAINER_SIZES, FREQUENCY_OPTIONS, EQUIPMENT_TYPES, MATERIAL_TYPES } from '../data/divisions';
-import { VerificationService } from '../services/verificationService';
+import { StickyFooterButton } from './StickyFooterButton';
+import { 
+  MapPin, 
+  Upload, 
+  Download, 
+  CheckCircle, 
+  XCircle, 
+  AlertTriangle, 
+  Plus, 
+  Trash2, 
+  ThumbsUp, 
+  ThumbsDown, 
+  Loader2,
+  ArrowRight
+} from 'lucide-react';
+import { 
+  CONTAINER_SIZES, 
+  FREQUENCY_OPTIONS, 
+  EQUIPMENT_TYPES, 
+  MATERIAL_TYPES 
+} from '../data/divisions';
 
-interface ServiceAreaVerificationProps {
-  onVerificationComplete: (verification: ServiceAreaVerificationData) => void;
-  onContinue?: () => void;
-  onFileNameUpdate: (fileName: string) => void;
-}
-
-export function ServiceAreaVerification({ onVerificationComplete, onContinue, onFileNameUpdate }: ServiceAreaVerificationProps) {
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [verificationResults, setVerificationResults] = useState<ServiceAreaVerificationData | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [isSavingToDb, setIsSavingToDb] = useState(false);
+export function ServiceAreaVerification({ 
+  onVerificationComplete, 
+  onContinue, 
+  onFileNameUpdate 
+}) {
+  // State Management
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [verificationResults, setVerificationResults] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [showSingleLocationForm, setShowSingleLocationForm] = useState(false);
-  const [autocomplete, setAutocomplete] = useState<google.maps.places.Autocomplete | null>(null);
-  const [addressInputRef, setAddressInputRef] = useState<HTMLInputElement | null>(null);
-
-
-  
-  // Geocoding state
   const [isGeocoding, setIsGeocoding] = useState(false);
-  const [geocodingProgress, setGeocodingProgress] = useState(0);
   
-  // Manual review workflow state
-  const [selectedManualReviewId, setSelectedManualReviewId] = useState<string | null>(null);
-  const [loadingActions, setLoadingActions] = useState<Record<string, 'approving' | 'rejecting' | null>>({});
-  const [showConfirmDialog, setShowConfirmDialog] = useState<{
-    isOpen: boolean;
-    locationId: string;
-    action: 'approve' | 'reject';
-    locationName: string;
-  } | null>(null);
+  // Manual review state
+  const [loadingActions, setLoadingActions] = useState({});
+  const [showConfirmDialog, setShowConfirmDialog] = useState(null);
   
   // Single location form state
   const [singleLocationData, setSingleLocationData] = useState({
@@ -56,130 +57,11 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
     binQuantity: 1
   });
 
-  const validator = new ServiceAreaValidator();
+  // Memoize validator to prevent recreation on every render
+  const validator = useMemo(() => new ServiceAreaValidator(), []);
 
-
-  // Initialize Google Places Autocomplete
-  React.useEffect(() => {
-    const initializeAutocomplete = () => {
-      if (!addressInputRef || !window.google?.maps?.places) {
-        console.log('🗺️ Google Maps API not ready yet, retrying...');
-        return false;
-      }
-
-      console.log('🗺️ Initializing Google Places Autocomplete...');
-      
-      const autocompleteInstance = new window.google.maps.places.Autocomplete(addressInputRef, {
-        types: ['address'],
-        componentRestrictions: { country: 'us' },
-        fields: ['address_components', 'formatted_address', 'geometry']
-      });
-
-      autocompleteInstance.addListener('place_changed', () => {
-        const place = autocompleteInstance.getPlace();
-        console.log('📍 Place selected:', place);
-        
-        if (place.address_components) {
-          let streetNumber = '';
-          let route = '';
-          let city = '';
-          let state = '';
-          let zipCode = '';
-          
-          place.address_components.forEach((component) => {
-            const types = component.types;
-            
-            if (types.includes('street_number')) {
-              streetNumber = component.long_name;
-            }
-            if (types.includes('route')) {
-              route = component.long_name;
-            }
-            if (types.includes('locality')) {
-              city = component.long_name;
-            }
-            if (types.includes('administrative_area_level_1')) {
-              state = component.long_name;
-            }
-            if (types.includes('postal_code')) {
-              zipCode = component.short_name;
-            }
-          });
-          
-          const fullAddress = `${streetNumber} ${route}`.trim();
-          
-          setSingleLocationData(prev => ({
-            ...prev,
-            address: fullAddress,
-            city: city,
-            state: state || 'Texas',
-            zipCode: zipCode
-          }));
-          
-          console.log('📍 Google Places autocomplete result:', {
-            fullAddress,
-            city,
-            state,
-            zipCode
-          });
-        }
-      });
-      
-      setAutocomplete(autocompleteInstance);
-      console.log('✅ Google Places Autocomplete initialized successfully');
-      return true;
-    };
-
-    // Try to initialize immediately
-    if (!initializeAutocomplete()) {
-      // If not ready, retry every 500ms for up to 10 seconds
-      let retryCount = 0;
-      const maxRetries = 20;
-      
-      const retryInterval = setInterval(() => {
-        retryCount++;
-        console.log(`🔄 Retry ${retryCount}/${maxRetries} - Attempting to initialize Google Places Autocomplete...`);
-        
-        if (initializeAutocomplete() || retryCount >= maxRetries) {
-          clearInterval(retryInterval);
-          if (retryCount >= maxRetries) {
-            console.warn('⚠️ Failed to initialize Google Places Autocomplete after maximum retries');
-          }
-        }
-      }, 500);
-      
-      // Cleanup interval on unmount
-      return () => clearInterval(retryInterval);
-    }
-  }, [addressInputRef]);
-
-  // Helper function to save verification results to database
-  const saveVerificationToDatabase = async (verification: ServiceAreaVerificationData, fileName: string) => {
-    setIsSavingToDb(true);
-    try {
-      console.log('💾 Saving verification results to database...');
-      const { sessionId: newSessionId, error } = await VerificationService.saveVerificationSession(
-        fileName,
-        verification
-      );
-
-      if (error) {
-        console.error('❌ Failed to save to database:', error);
-        // Don't block the workflow if database save fails
-        alert('Warning: Failed to save results to database. You can continue with pricing.');
-      } else if (newSessionId) {
-        console.log('✅ Results saved to database. Session ID:', newSessionId);
-        setSessionId(newSessionId);
-      }
-    } catch (error) {
-      console.error('❌ Unexpected error saving to database:', error);
-    } finally {
-      setIsSavingToDb(false);
-    }
-  };
-
-  // Get container size options based on equipment type
-  const getContainerSizeOptions = () => {
+  // Memoize container size options to prevent recreation on every render
+  const containerSizeOptions = useMemo(() => {
     if (singleLocationData.equipmentType === 'Front-Load Container') {
       return [
         { value: '2YD', label: '2 Yard' },
@@ -206,95 +88,61 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
       ];
     }
     return CONTAINER_SIZES;
-  };
+  }, [singleLocationData.equipmentType]);
 
-  const handleFileUpload = useCallback(async (file: File) => {
-    console.log('📁 FILE UPLOAD STARTED:', { fileName: file.name, fileSize: file.size });
-    
+  // Handle file upload with proper error handling and state management
+  const handleFileUpload = useCallback(async (file) => {
     setUploadedFile(file);
-    onFileNameUpdate(file.name);
-    
+    if (onFileNameUpdate) onFileNameUpdate(file.name);
     setIsProcessing(true);
     setProcessingProgress(0);
     
     try {
-      let data: string[][];
+      let data = [];
       
       if (isExcelFile(file)) {
-        console.log('📊 Processing Excel file...');
         const excelResult = await parseExcelFile(file);
         data = excelResult.data;
       } else {
-        console.log('📄 Processing CSV file...');
         const text = await file.text();
         data = parseCSV(text);
       }
       
-      console.log('📋 Parsed data:', {
-        rows: data.length,
-        columns: data[0]?.length || 0,
-        headers: data[0],
-        sampleData: data.slice(0, 3)
-      });
-      
-      // Parse location requests
+      // Parse location requests from data
       const locationRequests = validator.parseLocationRequestsFromData(data, file.name);
-      console.log('📍 Parsed location requests:', locationRequests.length);
       
-      // Geocode all addresses before processing
-      console.log('🗺️ Starting batch geocoding with Mapbox for', locationRequests.length, 'locations...');
-      setGeocodingProgress(0);
-      
-      for (let i = 0; i < locationRequests.length; i++) {
-        const request = locationRequests[i];
-        setGeocodingProgress(Math.round(((i + 1) / locationRequests.length) * 50)); // First 50% for geocoding
+      // Process each location with geocoding asynchronously
+      const results = await Promise.all(locationRequests.map(async (request, index) => {
+        // Update progress in batches to avoid excessive re-renders
+        if (index % 5 === 0 || index === locationRequests.length - 1) {
+          setProcessingProgress(Math.round(((index + 1) / locationRequests.length) * 100));
+        }
+        
+        let latitude = null;
+        let longitude = null;
         
         try {
           const fullAddress = `${request.address}, ${request.city}, ${request.state} ${request.zipCode}`;
-          console.log(`🗺️ Geocoding ${i + 1}/${locationRequests.length}: ${fullAddress}`);
-          
           const geocodingResult = await geocodeAddress(fullAddress);
           
           if (geocodingResult) {
-            request.latitude = geocodingResult.latitude;
-            request.longitude = geocodingResult.longitude;
-            console.log(`✅ Geocoded: ${fullAddress} -> [${geocodingResult.latitude}, ${geocodingResult.longitude}]`);
-          } else {
-            console.warn(`❌ Failed to geocode: ${fullAddress}`);
-            request.latitude = null;
-            request.longitude = null;
+            latitude = geocodingResult.latitude;
+            longitude = geocodingResult.longitude;
           }
-          
-          // Rate limiting: 100ms delay between requests for Mapbox (much faster than Nominatim)
-          if (i < locationRequests.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-          }
-          
         } catch (error) {
-          console.error(`❌ Geocoding error for ${request.address}:`, error);
-          request.latitude = null;
-          request.longitude = null;
+          console.error("Geocoding error:", error);
         }
-      }
-      
-      console.log('🗺️ Batch geocoding complete with Mapbox');
-      
-      // Process each location
-      const results: ServiceAreaResult[] = [];
-      
-      for (let i = 0; i < locationRequests.length; i++) {
-        const request = locationRequests[i];
-        setProcessingProgress(50 + Math.round(((i + 1) / locationRequests.length) * 50)); // Second 50% for validation
         
-        const result = await validator.validateLocation(
+        // Validate location
+        return await validator.validateLocation(
           request.id,
           request.address,
           request.city,
           request.state,
           request.zipCode,
           request.companyName,
-          request.latitude,
-          request.longitude,
+          latitude,
+          longitude,
           request.equipmentType,
           request.containerSize,
           request.frequency,
@@ -302,14 +150,10 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
           request.addOns,
           request.binQuantity
         );
-        
-        results.push(result);
-        
-        // Small delay to show progress
-        await new Promise(resolve => setTimeout(resolve, 10));
-      }
+      }));
       
-      const verification: ServiceAreaVerificationData = {
+      // Create verification data
+      const verification = {
         totalProcessed: results.length,
         serviceableCount: results.filter(r => r.status === 'serviceable').length,
         notServiceableCount: results.filter(r => r.status === 'not-serviceable').length,
@@ -317,164 +161,103 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
         results
       };
       
-      console.log('🔍 VERIFICATION COMPLETE - SETTING STATE:', {
-        verification: verification,
-        manualReviewCount: verification.manualReviewCount,
-        aboutToSetVerificationResults: true
-      });
-      
       setVerificationResults(verification);
-      
-      console.log('🔍 CALLING onVerificationComplete callback:', {
-        verification: verification,
-        onVerificationCompleteExists: !!onVerificationComplete
-      });
-      
-      onVerificationComplete(verification);
-      onFileNameUpdate(file.name);
-
-      // Save to database asynchronously
-      saveVerificationToDatabase(verification, file.name);
-
-      console.log('🔍 File upload verification completed and callbacks called', {
-        verification: verification,
-        manualReviewCount: verification.manualReviewCount,
-        onVerificationCompleteExists: !!onVerificationComplete,
-        onFileNameUpdateExists: !!onFileNameUpdate
-      });
-      
-      console.log('✅ Service area verification complete:', {
-        total: verification.totalProcessed,
-        serviceable: verification.serviceableCount,
-        notServiceable: verification.notServiceableCount,
-        manualReview: verification.manualReviewCount
-      });
+      if (onVerificationComplete) onVerificationComplete(verification);
       
     } catch (error) {
-      console.error('❌ Error processing file:', error);
+      console.error('Error processing file:', error);
       alert('Error processing file. Please check the format and try again.');
     } finally {
       setIsProcessing(false);
       setProcessingProgress(0);
     }
-  }, [onVerificationComplete, onFileNameUpdate]);
+  }, [onVerificationComplete, onFileNameUpdate, validator]);
 
-  const handleSingleLocationSubmit = () => {
+  // Handle single location submission
+  const handleSingleLocationSubmit = useCallback(async () => {
     if (!singleLocationData.address || !singleLocationData.city) {
       alert('Please fill in all required fields (Address, City)');
       return;
     }
 
-    console.log('📍 SINGLE LOCATION SUBMIT STARTED:', singleLocationData);
-
     setIsGeocoding(true);
     
-    const processLocation = async () => {
+    try {
+      const fullAddress = `${singleLocationData.address}, ${singleLocationData.city}, ${singleLocationData.state} ${singleLocationData.zipCode}`;
+      
+      // Geocode the address
+      let latitude = null;
+      let longitude = null;
+      
       try {
-        // Geocode the address first
-        const fullAddress = `${singleLocationData.address}, ${singleLocationData.city}, ${singleLocationData.state} ${singleLocationData.zipCode}`;
-        
-        console.log('🗺️ Geocoding single location:', fullAddress);
         const geocodingResult = await geocodeAddress(fullAddress);
-        
-        let latitude: number | null = null;
-        let longitude: number | null = null;
-        
         if (geocodingResult) {
           latitude = geocodingResult.latitude;
           longitude = geocodingResult.longitude;
-          console.log(`✅ Geocoded: ${fullAddress} -> [${latitude}, ${longitude}]`);
-        } else {
-          console.warn(`❌ Failed to geocode: ${fullAddress}`);
         }
-        
-        // Validate the location
-        const result = await validator.validateLocation(
-          'single-location-1',
-          singleLocationData.address,
-          singleLocationData.city,
-          singleLocationData.state,
-          singleLocationData.zipCode,
-          singleLocationData.companyName,
-          latitude,
-          longitude,
-          singleLocationData.equipmentType,
-          singleLocationData.containerSize,
-          singleLocationData.frequency,
-          singleLocationData.materialType,
-          [],
-          singleLocationData.binQuantity
-        );
-        
-        const verification: ServiceAreaVerificationData = {
-          totalProcessed: 1,
-          serviceableCount: result.status === 'serviceable' ? 1 : 0,
-          notServiceableCount: result.status === 'not-serviceable' ? 1 : 0,
-          manualReviewCount: result.status === 'manual-review' ? 1 : 0,
-          results: [result]
-        };
-        
-        console.log('🔍 SINGLE LOCATION VERIFICATION COMPLETE - SETTING STATE:', {
-          verification: verification,
-          manualReviewCount: verification.manualReviewCount,
-          aboutToSetVerificationResults: true
-        });
-        
-        setVerificationResults(verification);
-        
-        console.log('🔍 CALLING onVerificationComplete callback for single location:', {
-          verification: verification,
-          onVerificationCompleteExists: !!onVerificationComplete
-        });
-        
-        onVerificationComplete(verification);
-        const locationFileName = `Single Location - ${singleLocationData.companyName || 'Unknown'}`;
-        onFileNameUpdate(locationFileName);
-
-        // Save to database asynchronously
-        saveVerificationToDatabase(verification, locationFileName);
-
-        console.log('🔍 Single location verification completed and callbacks called', {
-          verification: verification,
-          manualReviewCount: verification.manualReviewCount,
-          onVerificationCompleteExists: !!onVerificationComplete,
-          onFileNameUpdateExists: !!onFileNameUpdate
-        });
-        
-        console.log('✅ Single location verification complete:', result);
-        
       } catch (error) {
-        console.error('❌ Error processing single location:', error);
-        alert('Error processing location. Please try again.');
-      } finally {
-        setIsGeocoding(false);
+        console.error('Geocoding error:', error);
       }
-    };
-    
-    processLocation();
-  };
+      
+      // Validate the location
+      const result = await validator.validateLocation(
+        'single-location-1',
+        singleLocationData.address,
+        singleLocationData.city,
+        singleLocationData.state,
+        singleLocationData.zipCode,
+        singleLocationData.companyName,
+        latitude,
+        longitude,
+        singleLocationData.equipmentType,
+        singleLocationData.containerSize,
+        singleLocationData.frequency,
+        singleLocationData.materialType,
+        [],
+        singleLocationData.binQuantity
+      );
+      
+      const verification = {
+        totalProcessed: 1,
+        serviceableCount: result.status === 'serviceable' ? 1 : 0,
+        notServiceableCount: result.status === 'not-serviceable' ? 1 : 0,
+        manualReviewCount: result.status === 'manual-review' ? 1 : 0,
+        results: [result]
+      };
+      
+      setVerificationResults(verification);
+      if (onVerificationComplete) onVerificationComplete(verification);
+      if (onFileNameUpdate) onFileNameUpdate(`Single Location - ${singleLocationData.companyName || 'Unknown'}`);
+      
+    } catch (error) {
+      console.error('Error processing single location:', error);
+      alert('Error processing location. Please try again.');
+    } finally {
+      setIsGeocoding(false);
+    }
+  }, [singleLocationData, validator, onVerificationComplete, onFileNameUpdate]);
 
-  const handleManualReviewAction = async (locationId: string, action: 'approve' | 'reject') => {
+  // Handle manual review action with proper state management
+  const handleManualReviewAction = useCallback(async (locationId, action) => {
     if (!verificationResults) return;
     
     setLoadingActions(prev => ({ ...prev, [locationId]: action === 'approve' ? 'approving' : 'rejecting' }));
     
     try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
       
       const updatedResults = verificationResults.results.map(result => {
         if (result.id === locationId) {
           return {
             ...result,
-            status: action === 'approve' ? 'serviceable' as const : 'not-serviceable' as const,
+            status: action === 'approve' ? 'serviceable' : 'not-serviceable',
             reason: action === 'approve' ? 'Manually approved' : 'Manually rejected'
           };
         }
         return result;
       });
       
-      const updatedVerification: ServiceAreaVerificationData = {
+      const updatedVerification = {
         totalProcessed: updatedResults.length,
         serviceableCount: updatedResults.filter(r => r.status === 'serviceable').length,
         notServiceableCount: updatedResults.filter(r => r.status === 'not-serviceable').length,
@@ -483,20 +266,19 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
       };
       
       setVerificationResults(updatedVerification);
-      onVerificationComplete(updatedVerification);
-      
-      console.log(`✅ Location ${locationId} ${action}d successfully`);
+      if (onVerificationComplete) onVerificationComplete(updatedVerification);
       
     } catch (error) {
-      console.error(`❌ Error ${action}ing location:`, error);
+      console.error(`Error ${action}ing location:`, error);
       alert(`Error ${action}ing location. Please try again.`);
     } finally {
       setLoadingActions(prev => ({ ...prev, [locationId]: null }));
       setShowConfirmDialog(null);
     }
-  };
+  }, [verificationResults, onVerificationComplete]);
 
-  const getStatusIcon = (status: string) => {
+  // Memoize helper functions to prevent recreation on every render
+  const getStatusIcon = useCallback((status) => {
     switch (status) {
       case 'serviceable':
         return <CheckCircle className="w-5 h-5 text-green-500" />;
@@ -507,9 +289,9 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
       default:
         return null;
     }
-  };
+  }, []);
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = useCallback((status) => {
     switch (status) {
       case 'serviceable':
         return 'text-green-700 bg-green-50 border-green-200';
@@ -520,8 +302,14 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
       default:
         return 'text-gray-700 bg-gray-50 border-gray-200';
     }
-  };
+  }, []);
 
+  // Memoize manual review results to prevent recalculation on every render
+  const manualReviewResults = useMemo(() => {
+    return verificationResults ? verificationResults.results.filter(r => r.status === 'manual-review') : [];
+  }, [verificationResults]);
+
+  // Loading states
   if (isProcessing) {
     return (
       <div className="max-w-4xl mx-auto p-6">
@@ -536,7 +324,7 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
               <div 
                 className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
                 style={{ width: `${processingProgress}%` }}
-              ></div>
+              />
             </div>
             <p className="text-sm text-gray-500">{processingProgress}% complete</p>
           </div>
@@ -559,72 +347,10 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
     );
   }
 
+  // Results view
   if (verificationResults) {
-    console.log('🔍 RENDERING VERIFICATION RESULTS:', {
-      verificationResults: verificationResults,
-      manualReviewCount: verificationResults.manualReviewCount,
-      hasOnContinue: !!onContinue,
-      shouldShowContinueButton: !!onContinue
-    });
-
-    const manualReviewResults = verificationResults.results.filter(r => r.status === 'manual-review');
-
     return (
-      <div className="max-w-6xl mx-auto p-6">
-        {/* Continue Button - Always shown after verification */}
-        {onContinue && (
-          <div className="mb-6 p-6 bg-blue-50 border-2 border-blue-600 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <p className="text-lg font-bold text-gray-900">
-                  {verificationResults.manualReviewCount === 0
-                    ? '✅ All locations verified!'
-                    : `⚠️ ${verificationResults.manualReviewCount} location(s) require manual review`
-                  }
-                </p>
-                <p className="text-sm text-gray-600 mt-1">
-                  {verificationResults.manualReviewCount === 0
-                    ? 'Ready to proceed to pricing setup'
-                    : 'You can review and approve/reject locations below, or continue to pricing setup'
-                  }
-                </p>
-                {isSavingToDb && (
-                  <div className="flex items-center mt-2 text-sm text-blue-600">
-                    <Database className="w-4 h-4 mr-2 animate-pulse" />
-                    <span>Saving to database...</span>
-                  </div>
-                )}
-                {sessionId && !isSavingToDb && (
-                  <div className="flex items-center mt-2 text-sm text-green-600">
-                    <Database className="w-4 h-4 mr-2" />
-                    <span>Saved to database (Session: {sessionId.substring(0, 8)}...)</span>
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={(e) => {
-                  console.log('🔵 Continue to Pricing button clicked!', {
-                    onContinueExists: !!onContinue,
-                    event: e,
-                    timestamp: new Date().toISOString()
-                  });
-                  if (onContinue) {
-                    onContinue();
-                    console.log('🔵 onContinue callback invoked successfully');
-                  } else {
-                    console.error('🔴 onContinue callback is not defined!');
-                  }
-                }}
-                className="px-8 py-4 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors cursor-pointer pointer-events-auto"
-                style={{ pointerEvents: 'auto' }}
-              >
-                Continue to Pricing →
-              </button>
-            </div>
-          </div>
-        )}
-
+      <div className="max-w-6xl mx-auto p-6 pb-24">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           <div className="p-6 border-b border-gray-200">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Service Area Verification Results</h2>
@@ -676,40 +402,23 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
           {/* Manual Review Section */}
           {manualReviewResults.length > 0 && (
             <div className="p-6 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">
-                Locations Requiring Manual Review ({manualReviewResults.length})
-              </h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Locations for Manual Review ({manualReviewResults.length})</h3>
               <div className="space-y-4">
-                {manualReviewResults.map((result) => (
-                  <div key={result.id} className="border border-yellow-200 rounded-lg p-4 bg-yellow-50">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center mb-2">
-                          <AlertTriangle className="w-5 h-5 text-yellow-500 mr-2" />
-                          <h4 className="font-medium text-gray-900">{result.companyName || 'Unknown Company'}</h4>
-                        </div>
-                        <p className="text-sm text-gray-600 mb-1">
-                          {result.address}, {result.city}, {result.state} {result.zipCode}
-                        </p>
-                        <p className="text-sm text-yellow-700 mb-3">{result.reason}</p>
-                        
-                        {result.equipmentType && (
-                          <div className="text-xs text-gray-500 space-y-1">
-                            <p><span className="font-medium">Equipment:</span> {result.equipmentType} - {result.containerSize}</p>
-                            <p><span className="font-medium">Frequency:</span> {result.frequency}</p>
-                            <p><span className="font-medium">Material:</span> {result.materialType}</p>
-                            {result.binQuantity && <p><span className="font-medium">Quantity:</span> {result.binQuantity}</p>}
-                          </div>
-                        )}
+                {manualReviewResults.map(result => (
+                  <div key={result.id} className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-yellow-800">{result.companyName || 'N/A'}</p>
+                        <p className="text-sm text-gray-600">{result.address}, {result.city}, {result.state} {result.zipCode}</p>
+                        <p className="text-sm text-yellow-700 mt-1">Reason: {result.reason}</p>
                       </div>
-                      
-                      <div className="flex space-x-2 ml-4">
+                      <div className="flex space-x-2">
                         <button
-                          onClick={() => setShowConfirmDialog({
-                            isOpen: true,
-                            locationId: result.id,
-                            action: 'approve',
-                            locationName: result.companyName || 'Unknown Company'
+                          onClick={() => setShowConfirmDialog({ 
+                            isOpen: true, 
+                            locationId: result.id, 
+                            action: 'approve', 
+                            locationName: `${result.companyName || 'N/A'} (${result.address})` 
                           })}
                           disabled={loadingActions[result.id] !== null}
                           className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -721,13 +430,12 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                           )}
                           Approve
                         </button>
-                        
                         <button
-                          onClick={() => setShowConfirmDialog({
-                            isOpen: true,
-                            locationId: result.id,
-                            action: 'reject',
-                            locationName: result.companyName || 'Unknown Company'
+                          onClick={() => setShowConfirmDialog({ 
+                            isOpen: true, 
+                            locationId: result.id, 
+                            action: 'reject', 
+                            locationName: `${result.companyName || 'N/A'} (${result.address})` 
                           })}
                           disabled={loadingActions[result.id] !== null}
                           className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -747,117 +455,36 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
             </div>
           )}
 
-          {/* All Results Table */}
+          {/* All Results Section */}
           <div className="p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">All Verification Results</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-4">All Locations ({verificationResults.totalProcessed})</h3>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Original Address
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Bin Quantity
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Container Size
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Equipment Type
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Material Type
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Service Frequency
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Add-ons/Extras
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Division
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Service Region
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Franchise Fee
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Reason
-                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company Name</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {verificationResults.results.map((result) => (
-                    <tr key={result.id} className="hover:bg-gray-50">
+                  {verificationResults.results.map(result => (
+                    <tr key={result.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{result.companyName || 'N/A'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{result.address}, {result.city}, {result.state} {result.zipCode}</td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          {getStatusIcon(result.status)}
-                          <span className={`ml-2 inline-flex px-2 py-1 text-xs font-medium rounded-full border ${getStatusColor(result.status)}`}>
-                            {result.status === 'serviceable' ? 'serviceable' : 'not serviceable'}
-                          </span>
-                        </div>
+                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(result.status)}`}>
+                          {getStatusIcon(result.status)} {result.status.replace('-', ' ')}
+                        </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {`${result.address}, ${result.city}, ${result.state} ${result.zipCode}`}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.binQuantity || 1}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.containerSize || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.equipmentType || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.materialType || 'Solid Waste'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.frequency || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.addOns && result.addOns.length > 0 ? 
-                          (Array.isArray(result.addOns) ? result.addOns.join(', ') : result.addOns) : 
-                          ''
-                        }
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.division || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.serviceRegion || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.franchiseFee !== undefined && result.franchiseFee !== null ? `${result.franchiseFee}%` : 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        {result.status === 'serviceable' ? '' : (result.reason || 'Unknown reason')}
-                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{result.reason || 'N/A'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </div>
-
-
-          {/* Manual Review Optional Message */}
-          {verificationResults.manualReviewCount > 0 && (
-            <div className="p-6 border-t border-gray-200 bg-yellow-50">
-              <div className="flex items-center">
-                <AlertTriangle className="w-5 h-5 text-yellow-600 mr-3" />
-                <p className="text-sm text-yellow-800">
-                  {verificationResults.manualReviewCount} location(s) flagged for manual review. You can approve/reject them above or continue to pricing setup.
-                </p>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Confirmation Dialog */}
@@ -869,9 +496,9 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                   showConfirmDialog.action === 'approve' ? 'bg-green-100' : 'bg-red-100'
                 }`}>
                   {showConfirmDialog.action === 'approve' ? (
-                    <ThumbsUp className={`h-6 w-6 text-green-600`} />
+                    <ThumbsUp className="h-6 w-6 text-green-600" />
                   ) : (
-                    <ThumbsDown className={`h-6 w-6 text-red-600`} />
+                    <ThumbsDown className="h-6 w-6 text-red-600" />
                   )}
                 </div>
                 <h3 className="text-lg leading-6 font-medium text-gray-900 mt-4">
@@ -893,7 +520,7 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                       showConfirmDialog.action === 'approve' 
                         ? 'focus:ring-green-500' 
                         : 'focus:ring-red-500'
-                    } mr-2`}
+                    }`}
                   >
                     {showConfirmDialog.action === 'approve' ? 'Approve' : 'Reject'}
                   </button>
@@ -908,10 +535,18 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
             </div>
           </div>
         )}
+
+        {/* Sticky Footer Button */}
+        <StickyFooterButton
+          verificationResults={verificationResults}
+          onContinue={onContinue}
+          isVisible={true}
+        />
       </div>
     );
   }
 
+  // Initial form view
   return (
     <div className="max-w-4xl mx-auto p-6">
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
@@ -925,7 +560,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
         <div className="p-6">
           {!showSingleLocationForm ? (
             <div className="space-y-6">
-              {/* File Upload Section */}
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Upload Location Data</h3>
                 <FileUpload
@@ -936,7 +570,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                 />
               </div>
 
-              {/* Divider */}
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-gray-300" />
@@ -946,7 +579,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                 </div>
               </div>
 
-              {/* Single Location Button */}
               <div className="text-center">
                 <button
                   onClick={() => setShowSingleLocationForm(true)}
@@ -959,7 +591,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
             </div>
           ) : (
             <div className="space-y-6">
-              {/* Single Location Form */}
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-medium text-gray-900">Add Single Location</h3>
@@ -972,7 +603,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Company Name */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Company Name
@@ -986,13 +616,11 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                     />
                   </div>
 
-                  {/* Address */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Street Address *
                     </label>
                     <input
-                      ref={setAddressInputRef}
                       type="text"
                       value={singleLocationData.address}
                       onChange={(e) => setSingleLocationData(prev => ({ ...prev, address: e.target.value }))}
@@ -1002,7 +630,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                     />
                   </div>
 
-                  {/* City */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       City *
@@ -1017,7 +644,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                     />
                   </div>
 
-                  {/* State */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       State
@@ -1034,7 +660,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                     </select>
                   </div>
 
-                  {/* ZIP Code */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       ZIP Code
@@ -1048,7 +673,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                     />
                   </div>
 
-                  {/* Equipment Type */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Equipment Type
@@ -1059,7 +683,7 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                         setSingleLocationData(prev => ({ 
                           ...prev, 
                           equipmentType: e.target.value,
-                          containerSize: '8YD' // Reset to default when equipment type changes
+                          containerSize: '8YD'
                         }));
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
@@ -1070,7 +694,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                     </select>
                   </div>
 
-                  {/* Container Size */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Container Size
@@ -1080,13 +703,12 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                       onChange={(e) => setSingleLocationData(prev => ({ ...prev, containerSize: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     >
-                      {getContainerSizeOptions().map(size => (
+                      {containerSizeOptions.map(size => (
                         <option key={size.value} value={size.value}>{size.label}</option>
                       ))}
                     </select>
                   </div>
 
-                  {/* Frequency */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Service Frequency
@@ -1102,7 +724,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                     </select>
                   </div>
 
-                  {/* Material Type */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Material Type
@@ -1118,7 +739,6 @@ export function ServiceAreaVerification({ onVerificationComplete, onContinue, on
                     </select>
                   </div>
 
-                  {/* Bin Quantity */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Bin Quantity

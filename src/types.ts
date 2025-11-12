@@ -18,10 +18,8 @@ export interface ServiceAreaResult {
 
   // Assignment Data
   division?: string;
-  divisionData?: DivisionData;
   serviceRegion?: string;
   franchiseFee?: number;
-  failureReason?: string;
 
   // Geolocation Data
   latitude?: number | null;
@@ -53,38 +51,14 @@ export interface LocationRequest {
   longitude: number | null;
 }
 
-export type PricingLogicType =
+export type PricingLogic =
   | 'franchised-supplementary'
   | 'franchised-direct'
   | 'open-market'
-  | 'custom'
-  | 'regional-brain';
-
-export interface PricingLogic {
-  type: PricingLogicType;
-  customRules?: CustomPricingRule[];
-  pricingConfig?: PricingConfig;
-  brokerRates?: RateData[];
-  regionalPricingData?: RegionalPricingData;
-  franchisedCitySupplementary?: Record<string, FranchisedCitySupplementaryPricing>;
-}
+  | 'custom';
 
 export interface PricingConfig {
-  logic?: PricingLogicType;
-  smallContainerPrice?: number;
-  largeContainerPrice?: number;
-  defaultFrequency?: string;
-  frequencyDiscounts?: {
-    twoThreeTimesWeek: number;
-    fourTimesWeek: number;
-  };
-  franchiseFee?: number;
-  tax?: number;
-  deliveryFee?: number;
-  fuelSurcharge?: number;
-  extraPickupRate?: number;
-  additionalFees?: AdditionalFee[];
-  containerSpecificPricingRules?: ContainerSpecificPricingRule[];
+  logic: PricingLogic;
   customConfig?: {
     baseRate?: number;
     perYardRate?: number;
@@ -93,7 +67,7 @@ export interface PricingConfig {
     deliveryFee?: number;
     environmentalFee?: number;
   };
-  isConfigured?: boolean;
+  isConfigured: boolean;
 }
 
 export interface ContainerSpecificPricingRule {
@@ -117,77 +91,4 @@ export interface AddOnItem {
   customName?: string;
   frequency: 'one-time' | 'weekly' | 'monthly' | 'quarterly' | 'annually' | 'per-service-frequency';
   description?: string;
-}
-
-export interface RegionalRateEntry {
-  containerSize: string;
-  frequency: string;
-  price: number;
-}
-
-export interface RegionalRateSheet {
-  region: 'NTX' | 'CTX' | 'STX';
-  regionName: string;
-  rates: RegionalRateEntry[];
-}
-
-export interface RegionalPricingData {
-  rateSheets: RegionalRateSheet[];
-  lastUpdated: string;
-}
-
-export interface RateData {
-  id: string;
-  city: string;
-  state: string;
-  equipmentType: string;
-  containerSize: string;
-  frequency: string;
-  baseRate: number;
-  franchiseFee: number;
-  localTax: number;
-  fuelSurcharge: number;
-  division: string;
-}
-
-export interface CustomPricingRule {
-  id: string;
-  city?: string;
-  state?: string;
-  division?: string;
-  equipmentType?: string;
-  containerSize?: string;
-  frequency?: string;
-  materialType?: string;
-  pricePerYard?: number;
-  basePrice?: number;
-  franchiseFee?: number;
-  deliveryFee?: number;
-  fuelSurcharge?: number;
-  tax?: number;
-  priority?: number;
-}
-
-export interface FranchisedCitySupplementaryPricing {
-  cityName: string;
-  state: string;
-  supplementaryCosts: SupplementaryCost[];
-}
-
-export interface SupplementaryCost {
-  id: string;
-  name: string;
-  description?: string;
-  costType: 'fixed' | 'per-yard' | 'per-pickup' | 'percentage';
-  amount: number;
-  appliesTo?: 'all' | 'specific-containers';
-  containerSizes?: string[];
-}
-
-export interface AdditionalFee {
-  id: string;
-  name: string;
-  amount: number;
-  type: 'fixed' | 'percentage';
-  appliesTo?: string;
 }

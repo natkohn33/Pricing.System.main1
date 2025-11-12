@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { type PricingLogic, type RateData, type CustomPricingRule, type PricingConfig, type ServiceAreaVerificationData, type RegionalPricingData, type FranchisedCitySupplementaryPricing } from '../types';
-import { detectColumns, parseRateData, parseRegionalRateSheets, parseCSVWithHeaderDetection } from '../utils/csvParser';
+import { PricingLogic, RateData, CustomPricingRule, PricingConfig, ServiceAreaVerificationData, RegionalPricingData, FranchisedCitySupplementaryPricing } from '../types';
+import { parseCSV, detectColumns, parseRateData, parseRegionalRateSheets } from '../utils/csvParser';
+import { FileUpload } from './FileUpload';
 import { CustomPricingForm } from './CustomPricingForm';
 import { FranchisedCitySupplementaryForm } from './FranchisedCitySupplementaryForm';
-import { isFranchisedCity } from '../utils/franchisedCityParser';
-import { Settings, CreditCard as Edit3, ArrowRight, CheckCircle, XCircle, Brain } from 'lucide-react';
+import { isFranchisedCity, getFranchisedCityName } from '../utils/franchisedCityParser';
+import { Settings, Upload, CreditCard as Edit3, ArrowRight, CheckCircle, XCircle, Brain, DollarSign, Plus, X } from 'lucide-react';
 import { getBuiltInRegionalPricingData } from '../data/regionalRateSheets';
 
 interface ComprehensivePricingFormProps {
@@ -19,7 +20,6 @@ interface ComprehensivePricingFormProps {
     customRules: any[];
     pricingConfig: PricingConfig;
     isConfigured: boolean;
-    regionalPricingData?: RegionalPricingData;
   };
   onDataSave?: (data: {
     selectedOption: 'regional-brain' | 'custom' | null;
@@ -28,10 +28,15 @@ interface ComprehensivePricingFormProps {
     customRules: any[];
     pricingConfig: PricingConfig;
     isConfigured: boolean;
-    regionalPricingData?: RegionalPricingData;
   }) => void;
 }
 
+interface ContainerPricingRow {
+  id: string;
+  smallContainerPrice: number;
+  largeContainerPrice: number;
+  selectedDivisions: string[];
+}
 
 export function ComprehensivePricingForm({ onPricingLogicSet, onContinue, serviceAreaVerification, uploadedFileName, savedData, onDataSave }: ComprehensivePricingFormProps) {
   // Initialize state with saved data if available
@@ -45,6 +50,7 @@ export function ComprehensivePricingForm({ onPricingLogicSet, onContinue, servic
   const [isConfigured, setIsConfigured] = useState(savedData?.isConfigured || false);
   const [enableDivisionPricing, setEnableDivisionPricing] = useState(false);
   const [selectedDivisions, setSelectedDivisions] = useState<string[]>([]);
+  const [allConfigurationsValid, setAllConfigurationsValid] = useState(true);
   const [regionalBrainActive, setRegionalBrainActive] = useState(false);
   const [franchisedCitySupplementary, setFranchisedCitySupplementary] = useState<FranchisedCitySupplementaryPricing | null>(null);
   const [comprehensiveFormValid, setComprehensiveFormValid] = useState(false);
@@ -276,9 +282,114 @@ export function ComprehensivePricingForm({ onPricingLogicSet, onContinue, servic
     franchisedCityLocations.map(location => `${location.city}, ${location.state}`)
   ));
   
+  const divisionOptions = [
+    'Central - San Marcos',
+    'Central - Poteet',
+    'Central - Nolanville',
+    'Central - Hearne',
+    'Central - Mexia',
+    'Central - Hillsboro',
+    'North - Wilmer',
+    'North - Cresson',
+    'North - Mansfield',
+    'North - Justin',
+    'North - McKinney',
+    'North - Pottsboro',
+    'South - Conroe',
+    'South - Jersey Village',
+    'South - Pearland',
+    'South - Dayton',
+    'South - Bayou',
+    'South - Corpus'
+  ];
 
 
+  const handleRegionalBrainFileUpload = async (file: File) => {
+    setRegionalBrainFile(file);
+    
+    try {
+      const text = await file.text();
+      console.log('📄 Regional brain file content preview:', text.substring(0, 500));
+      const regionalData = parseRegionalRateSheets(text);
+      
+      console.log('🧠 Parsed regional data:', regionalData);
+      
+      if (!regionalData.rateSheets || regionalData.rateSheets.length === 0) {
+        throw new Error('No rate sheets found in the uploaded file. Please check the file format.');
+      }
+      
+      setRegionalPricingData(regionalData);
+      
+      const logic: PricingLogic = {
+        type: 'regional-brain',
+        brokerRates: [],
+        regionalPricingData: regionalData,
+        customRules: []
+      };
+      
+      onPricingLogicSet(logic);
+      setPricingLogicState(logic);
+      setIsConfigured(true);
+      
+      console.log('🧠 Regional pricing brain configured:', {
+        totalSheets: regionalData.rateSheets.length,
+        regions: regionalData.rateSheets.map(s => s.region)
+      });
+      
+      // Save regional brain data for persistence
+      if (onDataSave) {
+        onDataSave({
+          selectedOption: 'regional-brain',
+          brokerFile: null,
+          brokerRates: [],
+          customRules: [],
+          pricingConfig,
+          isConfigured: true,
+          regionalPricingData: regionalData
+        });
+      }
+    } catch (error) {
+      console.error('Error parsing regional rate sheets:', error);
+      alert(`Error parsing the regional rate sheets CSV file: ${error instanceof Error ? error.message : 'Unknown error'}. Please check the format and try again.`);
+    }
+  };
 
+  const handleBrokerFileUpload = async (file: File) => {
+    setBrokerFile(file);
+    
+    try {
+      const text = await file.text();
+      const { headers, data } = parseCSVWithHeaderDetection(text);
+      const columnMap = detectColumns(headers);
+      const rates = parseRateData(data, columnMap);
+      
+      setBrokerRates(rates);
+      
+      const logic: PricingLogic = {
+        type: 'broker',
+        brokerRates: rates
+      };
+      
+      onPricingLogicSet(logic);
+      setPricingLogicState(logic);
+      setIsConfigured(true);
+      
+      // Save broker data for persistence
+      if (onDataSave) {
+        onDataSave({
+          ...savedData,
+          selectedOption: 'broker',
+          brokerFile: file,
+          brokerRates: rates,
+          customRules: [],
+          isConfigured: true
+        });
+      }
+    } catch (error) {
+      console.error('Error parsing broker rates:', error);
+      alert('Error parsing the CSV file. Please check the format and try again.');
+    }
+  };
 
   const handleManualRulesUpdate = (rules: CustomPricingRule[]) => {
     console.log('🔧 HANDLE_MANUAL_RULES_UPDATE:', { rulesCount: rules.length });
@@ -309,7 +420,8 @@ export function ComprehensivePricingForm({ onPricingLogicSet, onContinue, servic
     
     // For single location, only check if Price/YD is set
     if (isSingleLocation) {
-      const isSingleLocationValid = (config.smallContainerPrice ?? 0) > 0;
+      const isSingleLocationValid = config.smallContainerPrice > 0;
+      setAllConfigurationsValid(isSingleLocationValid);
       
       console.log('🔧 Single Location Pricing Config Update:', {
         pricePerYard: config.smallContainerPrice,
@@ -320,6 +432,17 @@ export function ComprehensivePricingForm({ onPricingLogicSet, onContinue, servic
         extraPickupRate: config.extraPickupRate,
         isValid: isSingleLocationValid
       });
+    } else {
+      // Check if all configurations are valid (container pricing + additional fees)
+      const hasContainerPricing = config.smallContainerPrice > 0 || config.largeContainerPrice > 0;
+      const hasAdditionalFees = config.additionalFees.length > 0;
+      
+      // Validate additional fees have division assignments
+      const additionalFeesValid = config.additionalFees.every(fee => 
+        fee.category.trim() !== '' && fee.price > 0
+      );
+      
+      setAllConfigurationsValid(additionalFeesValid); // Update validation state
     }
     
     // Save data for persistence between steps
@@ -341,9 +464,41 @@ export function ComprehensivePricingForm({ onPricingLogicSet, onContinue, servic
     console.log('🔧 Single location pricing configuration applied, Generate Quotes button now active');
   };
 
+  const handleDivisionToggle = (enabled: boolean) => {
+    setEnableDivisionPricing(enabled);
+    if (!enabled) {
+      setSelectedDivisions([]);
+    }
+  };
+
+  const handleDivisionSelection = (division: string) => {
+    setSelectedDivisions(prev => {
+      if (prev.includes(division)) {
+        return prev.filter(d => d !== division);
+      } else {
+        return [...prev, division];
+      }
+    });
+  };
 
 
-
+  const clearBrokerData = () => {
+    setBrokerFile(null);
+    setBrokerRates([]);
+    setIsConfigured(false);
+    
+    // Clear saved data
+    if (onDataSave) {
+      onDataSave({
+        ...savedData,
+        selectedOption: null,
+        brokerFile: null,
+        brokerRates: [],
+        customRules: [],
+        isConfigured: false
+      });
+    }
+  };
 
 
   const handleFranchisedCitySupplementaryUpdate = (supplementaryPricing: FranchisedCitySupplementaryPricing) => {
@@ -738,7 +893,7 @@ export function ComprehensivePricingForm({ onPricingLogicSet, onContinue, servic
                 <div key={`${cityInfo}-supplementary`} className="mb-6">
                   <FranchisedCitySupplementaryForm
                     cityName={cityInfo.split(',')[0].trim()}
-                    state={(cityInfo.split(',')[1] || '').trim() || 'Texas'}
+                    state={cityInfo.split(',')[1]?.trim() || 'Texas'}
                     onSupplementaryPricingUpdate={handleFranchisedCitySupplementaryUpdate}
                   />
                 </div>
@@ -758,7 +913,7 @@ export function ComprehensivePricingForm({ onPricingLogicSet, onContinue, servic
             initialRules={manualRules}
             onRulesUpdate={handleManualRulesUpdate}
             serviceAreaVerification={serviceAreaVerification}
-            isSingleLocation={isSingleLocation ?? false}
+            isSingleLocation={isSingleLocation}
             pricingConfig={pricingConfig}
             onPricingConfigUpdate={handlePricingConfigUpdate}
             onApplyPricingConfig={handleApplyPricingConfig}
@@ -792,12 +947,12 @@ export function ComprehensivePricingForm({ onPricingLogicSet, onContinue, servic
                     ? `Regional pricing brain (${regionalPricingData?.rateSheets.length || 0} rate sheets)`
                     : `${manualRules.length} manual rules`
                 }
-                {((pricingConfig.smallContainerPrice ?? 0) > 0 || (pricingConfig.largeContainerPrice ?? 0) > 0) && 
+                {(pricingConfig.smallContainerPrice > 0 || pricingConfig.largeContainerPrice > 0) && 
                   ' + advanced configuration'}
-                {(pricingConfig.containerSpecificPricingRules?.length ?? 0) > 0 && 
-                  ` + ${pricingConfig.containerSpecificPricingRules?.length ?? 0} container-specific rules`}
-                {(pricingConfig.additionalFees?.length ?? 0) > 0 && 
-                  ` + ${pricingConfig.additionalFees?.length ?? 0} additional fees`}. Continue to bulk processing mode.
+                {(pricingConfig.containerSpecificPricingRules || []).length > 0 && 
+                  ` + ${pricingConfig.containerSpecificPricingRules.length} container-specific rules`}
+                {(pricingConfig.additionalFees || []).length > 0 && 
+                  ` + ${pricingConfig.additionalFees.length} additional fees`}. Continue to bulk processing mode.
                 {serviceAreaVerification && 
                   ` Verification data for ${serviceAreaVerification.serviceableCount} serviceable locations is ready for integration.`}
               </p>
