@@ -9,20 +9,43 @@ interface CustomPricingFormProps {
   onRulesUpdate: (rules: CustomPricingRule[]) => void;
   serviceAreaVerification?: ServiceAreaVerificationData | null;
   isSingleLocation?: boolean;
-  pricingConfig: PricingConfig;
+  pricingConfig: PricingConfig | null | undefined;
   onPricingConfigUpdate: (config: PricingConfig, isValid?: boolean) => void;
   onApplyPricingConfig?: () => void;
 }
 
-export function CustomPricingForm({ 
-  initialRules, 
-  onRulesUpdate, 
-  serviceAreaVerification, 
+// Default pricing config to prevent undefined errors
+const DEFAULT_PRICING_CONFIG: PricingConfig = {
+  smallContainerPrice: 0,
+  largeContainerPrice: 0,
+  franchiseFee: 0,
+  tax: 8.25,
+  fuelSurcharge: 15,
+  deliveryFee: 0,
+  extraPickupRate: 0,
+  taxExempt: false,
+  containerSpecificPricingRules: [],
+  additionalFees: []
+};
+
+export function CustomPricingForm({
+  initialRules,
+  onRulesUpdate,
+  serviceAreaVerification,
   isSingleLocation = false,
-  pricingConfig,
+  pricingConfig: rawPricingConfig,
   onPricingConfigUpdate,
   onApplyPricingConfig
 }: CustomPricingFormProps) {
+  // Ensure pricingConfig is always a valid object
+  // Ensure pricingConfig is always a valid object, using a deep merge for initial values
+  const pricingConfig = React.useMemo(() => {
+    const config = rawPricingConfig ? { ...DEFAULT_PRICING_CONFIG, ...rawPricingConfig } : { ...DEFAULT_PRICING_CONFIG };
+    config.containerSpecificPricingRules = config.containerSpecificPricingRules || [];
+    config.additionalFees = config.additionalFees || [];
+    return config;
+  }, [rawPricingConfig]);
+  
   const [rules, setRules] = useState<CustomPricingRule[]>(initialRules);
   const [showAdditionalFees, setShowAdditionalFees] = useState(false);
   const [manualRules, setManualRules] = useState<CustomPricingRule[]>(initialRules);
@@ -53,7 +76,7 @@ export function CustomPricingForm({
 
   // Synchronize newRulePricePerYard with pricingConfig.smallContainerPrice when it changes
   React.useEffect(() => {
-    if (pricingConfig?.smallContainerPrice !== undefined && 
+    if (pricingConfig.smallContainerPrice !== undefined && 
         pricingConfig.smallContainerPrice !== newRulePricePerYard &&
         newRulePricePerYard === 0) { // Only update if user hasn't entered a value yet
       console.log('🔄 Auto-populating Price/YD from service area verification:', {
@@ -63,7 +86,14 @@ export function CustomPricingForm({
       });
       setNewRulePricePerYard(pricingConfig.smallContainerPrice);
     }
-  }, [pricingConfig?.smallContainerPrice]);
+  }, [pricingConfig.smallContainerPrice, newRulePricePerYard]);
+
+  // Update local state when pricingConfig prop changes (for parent updates)
+  React.useEffect(() => {
+    if (rawPricingConfig) {
+      onPricingConfigUpdate(pricingConfig, isComprehensiveFormValid(pricingConfig));
+    }
+  }, [pricingConfig, onPricingConfigUpdate]);
   
   // Derive serviceableLocation from serviceAreaVerification prop
   const serviceableLocation = isSingleLocation && serviceAreaVerification 
@@ -135,7 +165,7 @@ export function CustomPricingForm({
       
       return hasPricingConfiguration && containerRulesValid && additionalFeesValid;
     }
-  };
+  }
 
   const isRuleComplete = () => {
     if (isSingleLocation) {
@@ -154,7 +184,7 @@ export function CustomPricingForm({
              newRuleFrequency !== '' && 
              newRuleMaterialType !== '';
     }
-  };
+  }
 
   // Helper functions to check container-specific pricing coverage
   const hasSmallContainerSpecificPricing = (): boolean => {
@@ -162,14 +192,14 @@ export function CustomPricingForm({
     return smallContainerSizes.some(size => 
       pricingConfig.containerSpecificPricingRules.some(rule => rule.containerSize === size)
     );
-  };
+  }
 
   const hasLargeContainerSpecificPricing = (): boolean => {
     const largeContainerSizes = ['6YD', '8YD', '10YD'];
     return largeContainerSizes.some(size => 
       pricingConfig.containerSpecificPricingRules.some(rule => rule.containerSize === size)
     );
-  };
+  }
 
   const addContainerSpecificRule = () => {
     const newRule: ContainerSpecificPricingRule = {
@@ -177,14 +207,14 @@ export function CustomPricingForm({
       containerSize: '2YD',
       equipmentType: 'Front-Load Container',
       pricePerYard: 0
-    };
+    }
     
     const updatedConfig = {
       ...pricingConfig,
       containerSpecificPricingRules: [...pricingConfig.containerSpecificPricingRules, newRule]
-    };
+    }
     onPricingConfigUpdate(updatedConfig);
-  };
+  }
 
   const updateContainerSpecificRule = (id: string, field: keyof ContainerSpecificPricingRule, value: any) => {
     const updatedConfig = {
@@ -192,31 +222,31 @@ export function CustomPricingForm({
       containerSpecificPricingRules: pricingConfig.containerSpecificPricingRules.map(rule => 
         rule.id === id ? { ...rule, [field]: value } : rule
       )
-    };
+    }
     onPricingConfigUpdate(updatedConfig);
-  };
+  }
 
   const removeContainerSpecificRule = (id: string) => {
     const updatedConfig = {
       ...pricingConfig,
       containerSpecificPricingRules: pricingConfig.containerSpecificPricingRules.filter(rule => rule.id !== id)
-    };
+    }
     onPricingConfigUpdate(updatedConfig);
-  };
+  }
 
   const isContainerRuleComplete = (rule: ContainerSpecificPricingRule) => {
     return rule.containerSize.trim() !== '' && rule.pricePerYard > 0;
-  };
+  }
 
   const areAllContainerRulesComplete = () => {
     return pricingConfig.containerSpecificPricingRules.every(rule => isContainerRuleComplete(rule));
-  };
+  }
 
   const updatePricingConfig = (field: string, value: any) => {
     const updatedConfig = {
       ...pricingConfig,
       [field]: value
-    };
+    }
     
     console.log('🔧 CustomPricingForm updating config:', {
       field,
@@ -226,7 +256,7 @@ export function CustomPricingForm({
     });
     
     onPricingConfigUpdate(updatedConfig, isFormValid());
-  };
+  }
 
   const isComprehensiveFormValid = (configToCheck: PricingConfig): boolean => {
     if (isSingleLocation) {
@@ -244,7 +274,7 @@ export function CustomPricingForm({
       const hasAdditionalFees = configToCheck.additionalFees && configToCheck.additionalFees.length > 0;
       return hasContainerPricing || hasAdditionalFees;
     }
-  };
+  }
 
   const addAdditionalFee = () => {
     const newFee: AdditionalFee = {
@@ -253,22 +283,22 @@ export function CustomPricingForm({
       price: 0,
       frequency: 'one-time',
       assignedDivisions: []
-    };
+    }
     
     const updatedConfig = {
       ...pricingConfig,
       additionalFees: [...pricingConfig.additionalFees, newFee]
-    };
+    }
     onPricingConfigUpdate(updatedConfig);
-  };
+  }
 
   const isFeeComplete = (fee: AdditionalFee) => {
     return fee.category.trim() !== '' && fee.price > 0;
-  };
+  }
 
   const areAllFeesComplete = () => {
     return pricingConfig.additionalFees.every(fee => isFeeComplete(fee));
-  };
+  }
 
   const updateAdditionalFee = (id: string, field: string, value: any) => {
     const updatedConfig = {
@@ -276,17 +306,17 @@ export function CustomPricingForm({
       additionalFees: pricingConfig.additionalFees.map(fee => 
         fee.id === id ? { ...fee, [field]: value } : fee
       )
-    };
+    }
     onPricingConfigUpdate(updatedConfig);
-  };
+  }
 
   const removeAdditionalFee = (id: string) => {
     const updatedConfig = {
       ...pricingConfig,
       additionalFees: pricingConfig.additionalFees.filter(fee => fee.id !== id)
-    };
+    }
     onPricingConfigUpdate(updatedConfig);
-  };
+  }
 
   const additionalFeeFrequencies = [
     { value: 'one-time', label: 'One-time' },
@@ -326,7 +356,7 @@ export function CustomPricingForm({
       fuelSurcharge: newRuleFuelSurcharge,
       extraPickupRate: newRuleExtraPickupRate,
       taxExempt: newRuleTaxExempt
-    };
+    }
 
     const updatedRules = [...rules, rule];
     setRules(updatedRules);
@@ -354,7 +384,7 @@ export function CustomPricingForm({
     }
 
     console.log('✅ Single location pricing rule created:', rule);
-  };
+  }
 
   const updateRule = (id: string, field: keyof CustomPricingRule, value: any) => {
     const updatedRules = rules.map(rule => 
@@ -362,13 +392,13 @@ export function CustomPricingForm({
     );
     setRules(updatedRules);
     onRulesUpdate(updatedRules);
-  };
+  }
 
   const removeRule = (id: string) => {
     const updatedRules = rules.filter(rule => rule.id !== id);
     setRules(updatedRules);
     onRulesUpdate(updatedRules);
-  };
+  }
 
   const getContainerSizeOptions = () => {
     if (newRuleEquipmentType === 'Front-Load Container') {
@@ -403,7 +433,7 @@ export function CustomPricingForm({
       { value: 'auto-inherit', label: 'Auto-inherit from service data' },
       ...CONTAINER_SIZES
     ];
-  };
+  }
 
   return (
     <div className="space-y-6">
@@ -429,7 +459,7 @@ export function CustomPricingForm({
               <select
                 value={newRuleEquipmentType}
                 onChange={(e) => setNewRuleEquipmentType(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="auto-inherit">Auto-inherit from service data</option>
                 {EQUIPMENT_TYPES.map(type => (
@@ -445,7 +475,7 @@ export function CustomPricingForm({
               <select
                 value={newRuleMaterialType}
                 onChange={(e) => setNewRuleMaterialType(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="auto-inherit">Auto-inherit from service data</option>
                 {MATERIAL_TYPES.map(material => (
@@ -461,7 +491,7 @@ export function CustomPricingForm({
               <select
                 value={newRuleContainerSize}
                 onChange={(e) => setNewRuleContainerSize(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               >
                 {getContainerSizeOptions().map(size => (
                   <option key={size.value} value={size.value}>{size.label}</option>
@@ -470,8 +500,8 @@ export function CustomPricingForm({
             </div>
           </div>
 
-          {/* Row 2: Frequency, Bin Quantity, Price/YD */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          {/* Row 2: Frequency, Price/YD */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Frequency
@@ -479,7 +509,7 @@ export function CustomPricingForm({
               <select
                 value={newRuleFrequency}
                 onChange={(e) => setNewRuleFrequency(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="auto-inherit">Auto-inherit from service data</option>
                 {FREQUENCY_OPTIONS.map(freq => (
@@ -490,364 +520,660 @@ export function CustomPricingForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Bin Quantity
+                Price per Yard ($)
               </label>
-              <select
-                value={newRuleBinQuantity}
-                onChange={(e) => setNewRuleBinQuantity(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="auto-inherit">Auto-inherit from service data</option>
-                <option value="1">1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5">5</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Price/YD *
-              </label>
-              <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={newRulePricePerYard}
-                  onChange={(e) => setNewRulePricePerYard(parseFloat(e.target.value) || 0)}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Row 3: Tax %, Franchise Fee %, Fuel Surcharge % */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Tax %
-              </label>
-              <div className="relative">
-                <Percent className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="100"
-                  value={newRuleTax}
-                  onChange={(e) => setNewRuleTax(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 pr-10 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="8.25"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Franchise Fee %
-              </label>
-              <div className="relative">
-                <Percent className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="100"
-                  value={newRuleFranchiseFee}
-                  onChange={(e) => setNewRuleFranchiseFee(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 pr-10 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Fuel Surcharge %
-              </label>
-              <div className="relative">
-                <Percent className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="100"
-                  value={newRuleFuelSurcharge}
-                  onChange={(e) => setNewRuleFuelSurcharge(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 pr-10 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="15.00"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Row 4: Delivery Fee, Extra Pickup Rate */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Delivery Fee
-              </label>
-              <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={newRuleDeliveryFee}
-                  onChange={(e) => setNewRuleDeliveryFee(parseFloat(e.target.value) || 0)}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Extra Pickup Rate
-              </label>
-              <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={newRuleExtraPickupRate}
-                  onChange={(e) => setNewRuleExtraPickupRate(parseFloat(e.target.value) || 0)}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Row 5: Tax-exempt checkbox */}
-          <div className="mb-6">
-            <label className="flex items-center">
               <input
-                type="checkbox"
-                checked={newRuleTaxExempt}
-                onChange={(e) => setNewRuleTaxExempt(e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                type="number"
+                min="0"
+                step="0.01"
+                value={newRulePricePerYard}
+                onChange={(e) => setNewRulePricePerYard(parseFloat(e.target.value) || 0)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter price per yard"
               />
-              <span className="ml-2 text-sm text-gray-700">Tax-exempt</span>
-            </label>
+            </div>
           </div>
 
-          {/* Apply Button */}
-          <div className="flex justify-end">
-            <button
-              onClick={() => {
-                // Create a custom rule with the entered values
-                const rule: CustomPricingRule = {
-                  id: `single-location-rule-${Date.now()}`,
-                  city: newRuleCity,
-                  state: newRuleState,
-                  equipmentType: newRuleEquipmentType,
-                  containerSize: newRuleContainerSize,
-                  frequency: newRuleFrequency,
-                  materialType: newRuleMaterialType,
-                  pricePerYard: newRulePricePerYard,
-                  franchiseFee: newRuleFranchiseFee,
-                  tax: newRuleTax,
-                  fuelSurcharge: newRuleFuelSurcharge,
-                  deliveryFee: newRuleDeliveryFee,
-                  extraPickupRate: newRuleExtraPickupRate,
-                  taxExempt: newRuleTaxExempt
-                };
+          {/* Row 3: City, State */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                City
+              </label>
+              <input
+                type="text"
+                value={newRuleCity}
+                onChange={(e) => setNewRuleCity(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter city"
+              />
+            </div>
 
-                // Update the pricing config with the Price/YD value
-                const updatedConfig = {
-                  ...pricingConfig,
-                  smallContainerPrice: newRulePricePerYard,
-                  franchiseFee: newRuleFranchiseFee,
-                  tax: newRuleTax,
-                  fuelSurcharge: newRuleFuelSurcharge,
-                  deliveryFee: newRuleDeliveryFee,
-                  extraPickupRate: newRuleExtraPickupRate
-                };
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                State
+              </label>
+              <input
+                type="text"
+                value={newRuleState}
+                onChange={(e) => setNewRuleState(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter state"
+              />
+            </div>
+          </div>
 
-                const isValid = newRulePricePerYard > 0;
-                
-                console.log('🔧 Apply Pricing Configuration clicked:', {
-                  rule,
-                  updatedConfig,
-                  isValid,
-                  pricePerYard: newRulePricePerYard
-                });
+          {/* Additional Fees Section */}
+          <div className="border-t border-gray-200 pt-6">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-md font-medium text-gray-900">Additional Fees</h4>
+              <button
+                onClick={() => setShowAdditionalFees(!showAdditionalFees)}
+                className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+              >
+                {showAdditionalFees ? 'Hide' : 'Show'} Additional Fees
+              </button>
+            </div>
 
-                // Update both the rules and the config
-                const updatedRules = [...rules, rule];
-                setRules(updatedRules);
-                onRulesUpdate(updatedRules);
-                
-                // CRITICAL FIX: Call onPricingConfigUpdate with explicit isValid parameter
-                onPricingConfigUpdate(updatedConfig, isValid);
-                
-                if (onApplyPricingConfig) {
-                  onApplyPricingConfig();
-                }
-              }}
-              disabled={newRulePricePerYard <= 0}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Apply Pricing Configuration
-            </button>
+            {showAdditionalFees && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Tax (%)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pricingConfig.tax || 0}
+                      onChange={(e) => updatePricingConfig('tax', parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Franchise Fee ($)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pricingConfig.franchiseFee || 0}
+                      onChange={(e) => updatePricingConfig('franchiseFee', parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Fuel Surcharge (%)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pricingConfig.fuelSurcharge || 0}
+                      onChange={(e) => updatePricingConfig('fuelSurcharge', parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Delivery Fee ($)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pricingConfig.deliveryFee || 0}
+                      onChange={(e) => updatePricingConfig('deliveryFee', parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Extra Pickup Rate ($)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pricingConfig.extraPickupRate || 0}
+                      onChange={(e) => updatePricingConfig('extraPickupRate', parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="taxExempt"
+                      checked={pricingConfig.taxExempt || false}
+                      onChange={(e) => updatePricingConfig('taxExempt', e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="taxExempt" className="ml-2 block text-sm text-gray-900">
+                      Tax Exempt
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* Bulk Upload Workflow */}
       {!isSingleLocation && (
-        <div>
+        <div className="space-y-6">
+          {/* Global Pricing Configuration */}
+          <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <div className="flex items-center mb-6">
+              <Settings className="h-6 w-6 text-gray-600 mr-3" />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Global Pricing Configuration</h3>
+                <p className="text-gray-600 text-sm mt-1">
+                  Set default pricing that applies to all locations unless overridden by specific rules
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Small Container Price per Yard ($)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={pricingConfig.smallContainerPrice || 0}
+                  onChange={(e) => updatePricingConfig('smallContainerPrice', parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Enter price for small containers (2-4 YD)"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Large Container Price per Yard ($)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={pricingConfig.largeContainerPrice || 0}
+                  onChange={(e) => updatePricingConfig('largeContainerPrice', parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Enter price for large containers (6-10 YD)"
+                />
+              </div>
+            </div>
+
+            {/* Additional Global Fees */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tax (%)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={pricingConfig.tax || 0}
+                  onChange={(e) => updatePricingConfig('tax', parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Franchise Fee ($)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={pricingConfig.franchiseFee || 0}
+                  onChange={(e) => updatePricingConfig('franchiseFee', parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Fuel Surcharge (%)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={pricingConfig.fuelSurcharge || 0}
+                  onChange={(e) => updatePricingConfig('fuelSurcharge', parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Delivery Fee ($)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={pricingConfig.deliveryFee || 0}
+                  onChange={(e) => updatePricingConfig('deliveryFee', parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Container-Specific Pricing Rules */}
+          <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center">
+                <DollarSign className="h-6 w-6 text-green-600 mr-3" />
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Container-Specific Pricing</h3>
+                  <p className="text-gray-600 text-sm mt-1">
+                    Override global pricing for specific container sizes and equipment types
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={addContainerSpecificRule}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Container Rule
+              </button>
+            </div>
+
+            {pricingConfig.containerSpecificPricingRules.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <DollarSign className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                <p>No container-specific pricing rules configured</p>
+                <p className="text-sm">Add rules to override global pricing for specific containers</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {pricingConfig.containerSpecificPricingRules.map((rule) => (
+                  <div key={rule.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Container Size
+                        </label>
+                        <select
+                          value={rule.containerSize}
+                          onChange={(e) => updateContainerSpecificRule(rule.id, 'containerSize', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          {CONTAINER_SIZES.map(size => (
+                            <option key={size.value} value={size.value}>{size.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Equipment Type
+                        </label>
+                        <select
+                          value={rule.equipmentType}
+                          onChange={(e) => updateContainerSpecificRule(rule.id, 'equipmentType', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          {EQUIPMENT_TYPES.map(type => (
+                            <option key={type.value} value={type.value}>{type.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Price per Yard ($)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={rule.pricePerYard}
+                          onChange={(e) => updateContainerSpecificRule(rule.id, 'pricePerYard', parseFloat(e.target.value) || 0)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+
+                      <div className="flex items-end">
+                        <button
+                          onClick={() => removeContainerSpecificRule(rule.id)}
+                          className="w-full px-3 py-2 border border-red-300 text-red-700 rounded-md hover:bg-red-50"
+                        >
+                          <Trash2 className="h-4 w-4 mx-auto" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {!isContainerRuleComplete(rule) && (
+                      <div className="mt-2 text-sm text-red-600">
+                        Please complete all fields for this container rule
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Additional Fees */}
+          <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center">
+                <Percent className="h-6 w-6 text-purple-600 mr-3" />
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Additional Fees</h3>
+                  <p className="text-gray-600 text-sm mt-1">
+                    Configure additional fees that apply to specific divisions or all locations
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={addAdditionalFee}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Fee
+              </button>
+            </div>
+
+            {pricingConfig.additionalFees.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <Percent className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                <p>No additional fees configured</p>
+                <p className="text-sm">Add fees for services like environmental fees, administrative charges, etc.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {pricingConfig.additionalFees.map((fee) => (
+                  <div key={fee.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Fee Category
+                        </label>
+                        <input
+                          type="text"
+                          value={fee.category}
+                          onChange={(e) => updateAdditionalFee(fee.id, 'category', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="e.g., Environmental Fee"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Price ($)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={fee.price}
+                          onChange={(e) => updateAdditionalFee(fee.id, 'price', parseFloat(e.target.value) || 0)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Frequency
+                        </label>
+                        <select
+                          value={fee.frequency}
+                          onChange={(e) => updateAdditionalFee(fee.id, 'frequency', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          {additionalFeeFrequencies.map(freq => (
+                            <option key={freq.value} value={freq.value}>{freq.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex items-end">
+                        <button
+                          onClick={() => removeAdditionalFee(fee.id)}
+                          className="w-full px-3 py-2 border border-red-300 text-red-700 rounded-md hover:bg-red-50"
+                        >
+                          <Trash2 className="h-4 w-4 mx-auto" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {!isFeeComplete(fee) && (
+                      <div className="mt-2 text-sm text-red-600">
+                        Please complete all fields for this additional fee
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Manual Pricing Rules */}
+          <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center">
+                <Settings className="h-6 w-6 text-blue-600 mr-3" />
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Manual Pricing Rules</h3>
+                  <p className="text-gray-600 text-sm mt-1">
+                    Create specific pricing rules for unique service combinations
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowManualRuleForm(!showManualRuleForm)}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Manual Rule
+              </button>
+            </div>
+
+            {showManualRuleForm && (
+              <div className="border border-gray-200 rounded-lg p-4 mb-6">
+                <h4 className="text-md font-medium text-gray-900 mb-4">New Manual Pricing Rule</h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Equipment Type
+                    </label>
+                    <select
+                      value={newRuleEquipmentType}
+                      onChange={(e) => setNewRuleEquipmentType(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Select equipment type</option>
+                      {EQUIPMENT_TYPES.map(type => (
+                        <option key={type.value} value={type.value}>{type.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Container Size
+                    </label>
+                    <select
+                      value={newRuleContainerSize}
+                      onChange={(e) => setNewRuleContainerSize(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Select container size</option>
+                      {getContainerSizeOptions().map(size => (
+                        <option key={size.value} value={size.value}>{size.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Frequency
+                    </label>
+                    <select
+                      value={newRuleFrequency}
+                      onChange={(e) => setNewRuleFrequency(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Select frequency</option>
+                      {FREQUENCY_OPTIONS.map(freq => (
+                        <option key={freq.value} value={freq.value}>{freq.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Material Type
+                    </label>
+                    <select
+                      value={newRuleMaterialType}
+                      onChange={(e) => setNewRuleMaterialType(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Select material type</option>
+                      {MATERIAL_TYPES.map(material => (
+                        <option key={material.value} value={material.value}>{material.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => setShowManualRuleForm(false)}
+                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={addRule}
+                    disabled={!isRuleComplete()}
+                    className="px-4 py-2 border border-transparent text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  >
+                    Add Rule
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {rules.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <Settings className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                <p>No manual pricing rules configured</p>
+                <p className="text-sm">Add rules for specific service combinations that need custom pricing</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {rules.map((rule) => (
+                  <div key={rule.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 flex-1">
+                        <div>
+                          <span className="text-sm font-medium text-gray-700">Equipment:</span>
+                          <p className="text-sm text-gray-900">{rule.equipmentType}</p>
+                        </div>
+                        <div>
+                          <span className="text-sm font-medium text-gray-700">Container:</span>
+                          <p className="text-sm text-gray-900">{rule.containerSize}</p>
+                        </div>
+                        <div>
+                          <span className="text-sm font-medium text-gray-700">Frequency:</span>
+                          <p className="text-sm text-gray-900">{rule.frequency}</p>
+                        </div>
+                        <div>
+                          <span className="text-sm font-medium text-gray-700">Material:</span>
+                          <p className="text-sm text-gray-900">{rule.materialType}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => removeRule(rule.id)}
+                        className="ml-4 p-2 text-red-600 hover:bg-red-50 rounded-md"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Comprehensive Pricing Form */}
+      {showComprehensiveForm && (
+        <div className="bg-white border border-gray-200 rounded-lg p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center">
+              <Settings className="h-6 w-6 text-indigo-600 mr-3" />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Comprehensive Pricing Configuration</h3>
+                <p className="text-gray-600 text-sm mt-1">
+                  Advanced pricing configuration with all available options
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowComprehensiveForm(false)}
+              className="p-2 text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
           <ComprehensivePricingForm
-            config={pricingConfig}
-            onConfigUpdate={onPricingConfigUpdate}
+            initialConfig={pricingConfig}
+            onConfigUpdate={(config) => {
+              onPricingConfigUpdate(config, isComprehensiveFormValid(config));
+            }}
+            serviceAreaVerification={serviceAreaVerification}
             isSingleLocation={isSingleLocation}
           />
         </div>
       )}
 
-      {/* Manual Rules Section (for bulk upload) */}
-      {!isSingleLocation && (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="text-lg font-medium text-gray-900">Manual Pricing Rules (Optional)</h4>
-            <button
-              onClick={() => setShowManualRuleForm(!showManualRuleForm)}
-              className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-            >
-              {showManualRuleForm ? <X className="h-4 w-4 mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
-              {showManualRuleForm ? 'Cancel' : 'Add Manual Rule'}
-            </button>
-          </div>
-
-          {showManualRuleForm && (
-            <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Equipment Type</label>
-                  <select
-                    value={newRuleEquipmentType}
-                    onChange={(e) => setNewRuleEquipmentType(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="auto-inherit">Auto-inherit from service data</option>
-                    {EQUIPMENT_TYPES.map(type => (
-                      <option key={type.value} value={type.value}>{type.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Container Size</label>
-                  <select
-                    value={newRuleContainerSize}
-                    onChange={(e) => setNewRuleContainerSize(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    {getContainerSizeOptions().map(size => (
-                      <option key={size.value} value={size.value}>{size.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Frequency</label>
-                  <select
-                    value={newRuleFrequency}
-                    onChange={(e) => setNewRuleFrequency(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="auto-inherit">Auto-inherit from service data</option>
-                    {FREQUENCY_OPTIONS.map(freq => (
-                      <option key={freq.value} value={freq.value}>{freq.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Material Type</label>
-                  <select
-                    value={newRuleMaterialType}
-                    onChange={(e) => setNewRuleMaterialType(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="auto-inherit">Auto-inherit from service data</option>
-                    {MATERIAL_TYPES.map(material => (
-                      <option key={material.value} value={material.value}>{material.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3">
-                <button
-                  onClick={() => setShowManualRuleForm(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={addRule}
-                  disabled={!isRuleComplete()}
-                  className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Add Rule
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Display existing manual rules */}
-          {rules.length > 0 && (
-            <div className="space-y-3">
-              <h5 className="text-md font-medium text-gray-900">Configured Rules ({rules.length})</h5>
-              {rules.map((rule) => (
-                <div key={rule.id} className="bg-white border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <span className="font-medium text-gray-700">Equipment:</span>
-                          <p className="text-gray-900">{rule.equipmentType}</p>
-                        </div>
-                        <div>
-                          <span className="font-medium text-gray-700">Container:</span>
-                          <p className="text-gray-900">{rule.containerSize}</p>
-                        </div>
-                        <div>
-                          <span className="font-medium text-gray-700">Frequency:</span>
-                          <p className="text-gray-900">{rule.frequency}</p>
-                        </div>
-                        <div>
-                          <span className="font-medium text-gray-700">Material:</span>
-                          <p className="text-gray-900">{rule.materialType}</p>
-                        </div>
-                      </div>
-                      {rule.city && rule.state && (
-                        <div className="mt-2 text-sm">
-                          <span className="font-medium text-gray-700">Location:</span>
-                          <span className="text-gray-900 ml-1">{rule.city}, {rule.state}</span>
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => removeRule(rule.id)}
-                      className="ml-4 text-red-600 hover:text-red-800"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {/* Action Buttons */}
+      <div className="flex justify-end space-x-3">
+        {!isSingleLocation && !showComprehensiveForm && (
+          <button
+            onClick={() => setShowComprehensiveForm(true)}
+            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+          >
+            Advanced Configuration
+          </button>
+        )}
+        
+        {onApplyPricingConfig && (
+          <button
+            onClick={onApplyPricingConfig}
+            disabled={!isFormValid()}
+            className="px-6 py-2 border border-transparent text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+          >
+            Apply Pricing Configuration
+          </button>
+        )}
+      </div>
     </div>
   );
 }
