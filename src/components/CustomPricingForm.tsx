@@ -658,20 +658,21 @@ export function CustomPricingForm({
                       onChange={(e) => updatePricingConfig('taxExempt', e.target.checked)}
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
-                <label htmlFor="taxExempt" className="ml-2 block text-sm text-gray-900">
-                  Tax Exempt
-                </label>
+                    <label htmlFor="taxExempt" className="ml-2 block text-sm text-gray-900">
+                      Tax Exempt
+                    </label>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
-           )}
+        </div>
       )}
 
-            
-      {/* Bulk Upload Workflow */},
+      {/* Bulk Upload Workflow */}
       {!isSingleLocation && (
-        <div className="space-y-6">,
-       {/* Global Pricing Configuration */}
+        <div className="space-y-6">
+          {/* Global Pricing Configuration */}
           <div className="bg-white border border-gray-200 rounded-lg p-6">
             <div className="flex items-center mb-6">
               <Settings className="h-6 w-6 text-gray-600 mr-3" />
@@ -881,9 +882,10 @@ export function CustomPricingForm({
                   <h3 className="text-lg font-semibold text-gray-900">Additional Fees</h3>
                   <p className="text-gray-600 text-sm mt-1">
                     Configure additional fees that apply to specific divisions or all locations
-    
-            </div>
-            <button
+                  </p>
+                </div>
+              </div>
+              <button
                 onClick={addAdditionalFee}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700"
               >
@@ -975,9 +977,10 @@ export function CustomPricingForm({
                   <h3 className="text-lg font-semibold text-gray-900">Manual Pricing Rules</h3>
                   <p className="text-gray-600 text-sm mt-1">
                     Create specific pricing rules for unique service combinations
-    
-            </div>
-            <button
+                  </p>
+                </div>
+              </div>
+              <button
                 onClick={() => setShowManualRuleForm(!showManualRuleForm)}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
               >
@@ -1070,8 +1073,8 @@ export function CustomPricingForm({
                   >
                     Add Rule
                   </button>
+                </div>
               </div>
-            <button
             )}
 
             {rules.length === 0 ? (
@@ -1128,7 +1131,7 @@ export function CustomPricingForm({
                 <h3 className="text-lg font-semibold text-gray-900">Comprehensive Pricing Configuration</h3>
                 <p className="text-gray-600 text-sm mt-1">
                   Advanced pricing configuration with all available options
-  
+                </p>
               </div>
             </div>
             <button
