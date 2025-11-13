@@ -196,15 +196,20 @@ export function detectColumns(headers: string[]): Record<string, number> {
     
     // CRITICAL FIX: Enhanced frequency detection with exact "freq" matching
     if (normalizedHeader === 'frequency' || normalizedHeader === 'servicefrequency' ||
-        normalizedHeader === 'pickupfrequency' || normalizedHeader === 'schedule' ||
-        normalizedHeader === 'serviceschedule' || normalizedHeader === 'collectionfrequency' ||
-        normalizedHeader === 'frequencyperweek' || normalizedHeader === 'pickupfrequency' ||
-        normalizedHeader === 'pickupsperweek' || normalizedHeader === 'pickups' ||
-        normalizedHeader === 'weeklyfrequency' || normalizedHeader === 'timesperweek' ||
-        normalizedHeader === 'freq') {
-      columnMap.frequency = index;
-      console.log(`✅ Frequency column detected at index ${index} with header "${header}"`);
-    }
+    normalizedHeader === 'pickupfrequency' || normalizedHeader === 'schedule' ||
+    normalizedHeader === 'serviceschedule' || normalizedHeader === 'collectionfrequency' ||
+    normalizedHeader === 'frequencyperweek' || normalizedHeader === 'pickupfrequency' ||
+    normalizedHeader === 'pickupsperweek' || normalizedHeader === 'pickups' ||
+    normalizedHeader === 'weeklyfrequency' || normalizedHeader === 'timesperweek' ||
+    normalizedHeader === 'freq') {
+  // CRITICAL FIX: Only map the FIRST frequency column found
+  if (columnMap.frequency === undefined) {
+    columnMap.frequency = index;
+    console.log(`✅ ⭐ Frequency column detected at index ${index} with header "${header}"`);
+  } else {
+    console.log(`⚠️ Additional frequency column found at index ${index} ("${header}") - IGNORING (already mapped to index ${columnMap.frequency})`);
+  }
+}
     
     // Enhanced quantity detection - comprehensive patterns
     if (normalizedHeader === 'quantity' || normalizedHeader === 'containerquantity' ||
@@ -230,9 +235,28 @@ export function detectColumns(headers: string[]): Record<string, number> {
     if (normalizedHeader.includes('customer') && normalizedHeader.includes('name')) columnMap.customerName = index;
     if (normalizedHeader.includes('material')) columnMap.materialType = index;
     
-    // Add-ons detection
-    if (normalizedHeader.includes('addon') || normalizedHeader.includes('extra') || 
-        normalizedHeader.includes('lockbar') || normalizedHeader.includes('lock')) columnMap.addOns = index;
+    // ✅ PHASE 3 ENHANCEMENT: Comprehensive Add-ons detection
+    if (normalizedHeader === 'addons' || 
+        normalizedHeader === 'addon' || 
+        normalizedHeader === 'extras' || 
+        normalizedHeader === 'extra' ||
+        normalizedHeader === 'additionalservices' ||
+        normalizedHeader === 'additionalservice' ||
+        normalizedHeader === 'additional' ||
+        normalizedHeader === 'specialservices' ||
+        normalizedHeader === 'specialservice' ||
+        normalizedHeader === 'special' ||
+        normalizedHeader === 'lockbar' || 
+        normalizedHeader === 'lock' ||
+        normalizedHeader === 'lockbars' ||
+        normalizedHeader === 'locks' ||
+        normalizedHeader === 'addonfees' ||
+        normalizedHeader === 'addonservices' ||
+        normalizedHeader === 'extrafees' ||
+        normalizedHeader === 'extraservices') {
+      columnMap.addOns = index;
+      console.log(`✅ 🎯 Add-ons column detected at index ${index} with header "${header}"`);
+    }
     
     // Notes detection
     if (normalizedHeader.includes('note') || normalizedHeader.includes('comment')) columnMap.notes = index;
@@ -264,13 +288,20 @@ export function detectColumns(headers: string[]): Record<string, number> {
   console.log('📊 Final column mapping:', columnMap);
   console.log('🎯 Frequency column mapped to index:', columnMap.frequency, '(should be 7 for column H)');
   
+  // ✅ PHASE 3 ENHANCEMENT: Log if addOns column was detected
+  if (columnMap.addOns !== undefined) {
+    console.log('🎯 ✅ ADD-ONS COLUMN DETECTED - CSV contains additional services data at index:', columnMap.addOns);
+  } else {
+    console.log('ℹ️ No add-ons column detected in CSV');
+  }
+  
   return columnMap;
 }
 
 export function parseRateData(csvData: string[][], columnMap: Record<string, number>): RateData[] {
   return csvData.slice(1).map((row, index) => ({
     id: `rate-${index}`,
-    city: row[columnMap.city] || '',
+    city: normalizeCity(row[columnMap.city] || ''),
     state: row[columnMap.state] || 'TX',
     equipmentType: row[columnMap.equipmentType] || '',
     containerSize: normalizeContainerSize(row[columnMap.containerSize] || ''),
@@ -284,21 +315,87 @@ export function parseRateData(csvData: string[][], columnMap: Record<string, num
 }
 
 export function parseServiceRequests(csvData: string[][], columnMap: Record<string, number>): ServiceRequest[] {
-  return csvData.slice(1).map((row, index) => ({
-    id: `request-${index}`,
-    customerName: row[columnMap.customerName] || row[columnMap.companyName] || `Customer ${index + 1}`,
-    address: parseAddressField(row[columnMap.address] || '').streetAddress || row[columnMap.address] || '',
-    city: parseAddressField(row[columnMap.address] || '').city || row[columnMap.city] || '',
-    state: convertStateAbbreviation(parseAddressField(row[columnMap.address] || '').state || row[columnMap.state] || 'TX'),
-    equipmentType: row[columnMap.equipmentType] || '',
-    containerSize: normalizeContainerSize(row[columnMap.containerSize] || ''),
-    frequency: normalizeFrequency(row[columnMap.frequency] || ''),
-    materialType: normalizeMaterialType(row[columnMap.materialType] || 'Solid Waste'),
-    zipCode: parseAddressField(row[columnMap.address] || '').zipCode || row[columnMap.zipCode] || '',
-    addOns: row[columnMap.addOns] ? row[columnMap.addOns].split(',').map(s => s.trim()) : [],
-    notes: row[columnMap.notes] || '',
-    binQuantity: columnMap.binQuantity >= 0 ? parseInt(row[columnMap.binQuantity]) || 1 : 1
-  }));
+  // ✅ PHASE 3 ENHANCEMENT: Track if any add-ons were found
+  let locationsWithAddOns = 0;
+  
+  const serviceRequests = csvData.slice(1).map((row, index) => {
+    // CRITICAL: Extract the raw frequency value WITHOUT defaulting to empty string
+    // This preserves the actual cell value including "2x/", "1x/", "3x/" patterns
+    let rawFrequency = '';
+    if (columnMap.frequency !== undefined && row[columnMap.frequency] !== undefined) {
+      rawFrequency = String(row[columnMap.frequency]).trim();
+    }
+
+    // Enhanced logging to debug frequency extraction
+    console.log(`📊 Row ${index + 1} frequency extraction:`, {
+      columnIndex: columnMap.frequency,
+      rawValue: row[columnMap.frequency],
+      rawValueType: typeof row[columnMap.frequency],
+      trimmedValue: rawFrequency,
+      fullRow: row.slice(0, 10) // Show first 10 columns for context
+    });
+
+    const normalizedFreq = normalizeFrequency(rawFrequency);
+
+    console.log(`🔄 Row ${index + 1} - Raw frequency: "${rawFrequency}" -> Normalized: "${normalizedFreq}"`);
+
+    // ✅ PHASE 3 ENHANCEMENT: Parse add-ons with better logging
+    let addOns: string[] = [];
+    let hasAddOnsFromCSV = false;
+    
+    if (columnMap.addOns !== undefined && row[columnMap.addOns]) {
+      const rawAddOns = row[columnMap.addOns].trim();
+      
+      if (rawAddOns && rawAddOns !== '') {
+        // Split by common delimiters: comma, semicolon, pipe
+        addOns = rawAddOns
+          .split(/[,;|]/)
+          .map(s => s.trim())
+          .filter(s => s !== '');
+        
+        hasAddOnsFromCSV = addOns.length > 0;
+        
+        if (hasAddOnsFromCSV) {
+          locationsWithAddOns++;
+          console.log(`📦 Row ${index + 1} ADD-ONS DETECTED:`, {
+            rawValue: rawAddOns,
+            parsed: addOns,
+            count: addOns.length
+          });
+        }
+      }
+    }
+
+    return {
+      id: `request-${index}`,
+      customerName: row[columnMap.customerName] || row[columnMap.companyName] || `Customer ${index + 1}`,
+      address: parseAddressField(row[columnMap.address] || '').streetAddress || row[columnMap.address] || '',
+      city: normalizeCity(parseAddressField(row[columnMap.address] || '').city || row[columnMap.city] || ''),
+      state: convertStateAbbreviation(parseAddressField(row[columnMap.address] || '').state || row[columnMap.state] || 'TX'),
+      equipmentType: row[columnMap.equipmentType] || '',
+      containerSize: normalizeContainerSize(row[columnMap.containerSize] || ''),
+      frequency: normalizedFreq,
+      materialType: normalizeMaterialType(row[columnMap.materialType] || 'Trash'),
+      zipCode: parseAddressField(row[columnMap.address] || '').zipCode || row[columnMap.zipCode] || '',
+      addOns: addOns,
+      notes: row[columnMap.notes] || '',
+      binQuantity: columnMap.binQuantity >= 0 ? parseInt(row[columnMap.binQuantity]) || 1 : 1,
+      hasAddOnsFromCSV // ✅ PHASE 3: Track if this location has add-ons from CSV
+    };
+  });
+
+  // ✅ PHASE 3 ENHANCEMENT: Log summary of add-ons detection
+  if (locationsWithAddOns > 0) {
+    console.log(`📦 ✅ ADD-ONS SUMMARY:`, {
+      totalLocations: serviceRequests.length,
+      locationsWithAddOns: locationsWithAddOns,
+      percentageWithAddOns: ((locationsWithAddOns / serviceRequests.length) * 100).toFixed(1) + '%'
+    });
+  } else {
+    console.log('ℹ️ No add-ons detected in any locations');
+  }
+
+  return serviceRequests;
 }
 
 export function normalizeContainerSize(size: string): string {
@@ -308,12 +405,40 @@ export function normalizeContainerSize(size: string): string {
 }
 
 /**
+ * Normalize city names to handle abbreviations and variations
+ * Export this function so it can be used by other modules
+ */
+export function normalizeCity(city: string): string {
+  if (!city || typeof city !== 'string') {
+    return city;
+  }
+
+  const trimmed = city.trim();
+  const normalized = trimmed.toLowerCase();
+
+  // City abbreviation mappings
+  const cityAbbreviations: Record<string, string> = {
+    'ft worth': 'Fort Worth',
+    'ft. worth': 'Fort Worth',
+    'fw': 'Fort Worth',
+  };
+
+  // Check for direct match
+  if (cityAbbreviations[normalized]) {
+    return cityAbbreviations[normalized];
+  }
+
+  // Return original with proper casing if no match found
+  return trimmed;
+}
+
+/**
  * Normalize material type for consistent categorization
  * Export this function so it can be used by other modules
  */
 export function normalizeMaterialType(materialType: string): string {
   if (!materialType || typeof materialType !== 'string') {
-    return 'Solid Waste';
+    return 'Trash';
   }
 
   const normalized = materialType.toLowerCase().trim();
@@ -335,14 +460,14 @@ export function normalizeMaterialType(materialType: string): string {
     return 'Recycling';
   }
   
-  // Solid waste variations (default)
+  // Solid waste variations (default) - Return "Trash" to match MATERIAL_TYPES
   if (normalized.includes('trash') ||
       normalized.includes('garbage') ||
       normalized.includes('waste') ||
       normalized.includes('msw') ||
       normalized.includes('solid waste') ||
       normalized.includes('refuse')) {
-    return 'Solid Waste';
+    return 'Trash';
   }
   
   // Construction/demolition
@@ -361,37 +486,58 @@ export function normalizeMaterialType(materialType: string): string {
     return 'Yard Waste';
   }
   
-  // Default to solid waste for unrecognized types
-  console.log('⚠️ Unrecognized material type, defaulting to Solid Waste:', materialType);
-  return 'Solid Waste';
+  // Default to Trash for unrecognized types
+  console.log('⚠️ Unrecognized material type, defaulting to Trash:', materialType);
+  return 'Trash';
 }
 
 function normalizeFrequency(frequency: string): string {
-  console.log('🔄 Normalizing frequency input:', frequency);
-  
+  console.log('🔄 Normalizing frequency input:', frequency, '| Type:', typeof frequency, '| Length:', frequency?.length);
+
+  // CRITICAL: NEVER default to '1x/week' - if frequency is missing, return empty string
+  // This ensures accurate data representation from uploaded files
   if (!frequency || frequency.trim() === '') {
-    console.log('❌ Empty frequency input, defaulting to 1x/week');
-    return '1x/week';
+    console.warn('⚠️ Empty frequency input - returning empty string (NO DEFAULT)');
+    return '';
   }
-  
-  const lower = frequency.toLowerCase();
+
+  const lower = frequency.toLowerCase().trim();
+  const original = frequency.trim();
   console.log('🔍 Frequency lowercase:', lower);
-  
-  // CRITICAL FIX: Direct pattern matching for exact format in your data
-  const directMatch = frequency.match(/(\d+)x\/week/i);
-  if (directMatch) {
-    const result = `${directMatch[1]}x/week`;
-    console.log('✅ Direct frequency match found:', frequency, '->', result);
+
+  // CRITICAL FIX: Handle truncated patterns like "2x/", "1x/", "3x/" (missing time unit)
+  // These should default to weekly frequency as that's the most common case
+  const truncatedMatch = original.match(/^(\d+(?:\.\d+)?)x\/$/i);
+  if (truncatedMatch) {
+    const times = truncatedMatch[1];
+    const result = `${times}x/week`;
+    console.log('✅ Truncated frequency pattern detected:', frequency, '->', result);
     return result;
   }
-  
-  // Handle decimal frequencies like 0.5x/week
-  const decimalMatch = frequency.match(/(0\.5|\.\5)x?\/week/i);
+
+  // Handle complete patterns with week: "2x/week", "1x/week", etc.
+  const weekMatch = original.match(/^(\d+(?:\.\d+)?)x\/week$/i);
+  if (weekMatch) {
+    const result = `${weekMatch[1]}x/week`;
+    console.log('✅ Complete weekly frequency match found:', frequency, '->', result);
+    return result;
+  }
+
+  // Handle complete patterns with month: "2x/month", "1x/month", etc.
+  const monthMatch = original.match(/^(\d+(?:\.\d+)?)x\/month$/i);
+  if (monthMatch) {
+    const result = `${monthMatch[1]}x/month`;
+    console.log('✅ Complete monthly frequency match found:', frequency, '->', result);
+    return result;
+  }
+
+  // Handle decimal frequencies like 0.5x/week or .5x/week
+  const decimalMatch = frequency.match(/(0\.5|\.5)x?\/week/i);
   if (decimalMatch) {
     console.log('✅ Decimal frequency match found:', frequency, '-> 0.5x/week');
     return '0.5x/week';
   }
-  
+
   // Handle half-week variations
   if (lower.includes('half') || lower.includes('0.5') || lower.includes('.5')) {
     if (lower.includes('week')) {
@@ -399,13 +545,14 @@ function normalizeFrequency(frequency: string): string {
       return '0.5x/week';
     }
   }
-  
+
   // Handle every other week / biweekly
-  if (lower.includes('every other week') || lower.includes('biweekly') || lower.includes('bi-weekly')) {
+  if (lower.includes('every other week') || lower === 'biweekly' || lower === 'bi-weekly') {
     console.log('✅ Every other week frequency detected:', frequency, '-> 0.5x/week');
     return '0.5x/week';
   }
-  
+
+  // Handle "weekly" patterns with numbers
   if (lower.includes('week')) {
     const match = lower.match(/(\d+)/);
     const times = match ? parseInt(match[1]) : 1;
@@ -413,7 +560,8 @@ function normalizeFrequency(frequency: string): string {
     console.log('✅ Weekly frequency parsed:', frequency, '->', result);
     return result;
   }
-  
+
+  // Handle "monthly" patterns with numbers
   if (lower.includes('month')) {
     const match = lower.match(/(\d+)/);
     const times = match ? parseInt(match[1]) : 1;
@@ -421,24 +569,33 @@ function normalizeFrequency(frequency: string): string {
     console.log('✅ Monthly frequency parsed:', frequency, '->', result);
     return result;
   }
-  
-  if (lower.includes('daily')) {
+
+  // Handle text-based frequencies
+  if (lower === 'daily') {
     console.log('✅ Daily frequency detected:', frequency, '-> 7x/week');
     return '7x/week';
   }
-  if (lower.includes('weekly')) {
+  if (lower === 'weekly') {
     console.log('✅ Weekly frequency detected:', frequency, '-> 1x/week');
     return '1x/week';
   }
-  if (lower.includes('biweekly') || lower.includes('bi-weekly')) {
-    console.log('✅ Biweekly frequency detected:', frequency, '-> 2x/month');
-    return '2x/month';
-  }
-  if (lower.includes('monthly')) {
+  if (lower === 'monthly') {
     console.log('✅ Monthly frequency detected:', frequency, '-> 1x/month');
     return '1x/month';
   }
-  
+  if (lower === 'on-call' || lower === 'as needed' || lower === 'as-needed') {
+    console.log('✅ On-call frequency detected:', frequency, '-> on-call');
+    return 'on-call';
+  }
+
+  // If just a number, assume weekly frequency
+  const numberOnlyMatch = original.match(/^(\d+)$/);
+  if (numberOnlyMatch) {
+    const result = `${numberOnlyMatch[1]}x/week`;
+    console.log('✅ Number-only frequency detected, defaulting to weekly:', frequency, '->', result);
+    return result;
+  }
+
   console.log('⚠️ Frequency not recognized, returning as-is:', frequency);
   return frequency;
 }
@@ -749,8 +906,8 @@ export function parseRegionalRateSheets(csvText: string): RegionalPricingData {
         console.log(`⚠️ Skipping non-container row: "${containerSize}"`);
         continue;
       }
-      
-      // Normalize container size (e.g., "2yd" -> "2YD")
+
+      // Normalize container size (e.g., "3yd" -> "3YD")
       const normalizedSize = containerSize.toUpperCase().replace(/[^0-9YD]/g, '');
       console.log(`📦 Processing container size: "${containerSize}" -> "${normalizedSize}"`);
       
