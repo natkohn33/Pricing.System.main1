@@ -1,3 +1,5 @@
+// pricingEngine.ts - COMPLETE CORRECTED VERSION WITH PHASE 3 UPDATES
+
 import { 
   ServiceRequest, 
   Quote, 
@@ -7,7 +9,9 @@ import {
   RegionalPricingData, 
   ServiceAreaVerificationData,
   AdditionalFee,
-  FranchisedCitySupplementaryPricing
+  FranchisedCitySupplementaryPricing,
+  GlobalPricingRule,           
+  ContainerSpecificOverride    
 } from '../types';
 import { standardizeFrequency } from './frequencyMatcher';
 import { matchFranchisedCity, getFranchisedCityRate } from './franchisedCityMatcher';
@@ -31,8 +35,12 @@ export class PricingEngine {
       hasRegionalData: !!(logic.regionalPricingData),
       regionalSheetsCount: logic.regionalPricingData?.rateSheets?.length || 0,
       hasPricingConfig: !!(logic.pricingConfig),
+      hasGlobalPricingRules: !!(logic.pricingConfig?.globalPricingRules?.length),
+      globalPricingRulesCount: logic.pricingConfig?.globalPricingRules?.length || 0,
       hasAdditionalFees: !!(logic.pricingConfig?.additionalFees?.length),
-      additionalFeesCount: logic.pricingConfig?.additionalFees?.length || 0
+      additionalFeesCount: logic.pricingConfig?.additionalFees?.length || 0,
+      hasFranchisedCitySupplementary: !!(logic.franchisedCitySupplementary),
+      franchisedCitySupplementaryCount: Object.keys(logic.franchisedCitySupplementary || {}).length
     });
   }
 
@@ -59,9 +67,594 @@ export class PricingEngine {
   }
 
   /**
-   * Generate a quote for a service request
+   * Find matching Global Pricing Rule based on service parameters
+   * Supports "auto-inherit" values that match any service parameter
+   * FIXED: Now normalizes equipment types and container sizes for case-insensitive matching
    */
-  async generateQuote(serviceRequest: ServiceRequest): Promise<Quote> {
+  private findMatchingGlobalRule(
+    serviceRequest: ServiceRequest,
+    globalPricingRules: GlobalPricingRule[]
+  ): GlobalPricingRule | null {
+    if (!globalPricingRules || globalPricingRules.length === 0) {
+      return null;
+    }
+
+    // Normalize service request values for consistent matching
+    const normalizedRequestEquipment = this.normalizeEquipmentType(serviceRequest.equipmentType);
+    const normalizedRequestContainer = this.normalizeContainerSizeForMatching(serviceRequest.containerSize);
+
+    console.log('🔍 Finding matching Global Pricing Rule:', {
+      originalEquipment: serviceRequest.equipmentType,
+      normalizedEquipment: normalizedRequestEquipment,
+      originalContainer: serviceRequest.containerSize,
+      normalizedContainer: normalizedRequestContainer,
+      frequency: serviceRequest.frequency,
+      materialType: serviceRequest.materialType,
+      availableRules: globalPricingRules.length
+    });
+
+    const matchedRule = globalPricingRules.find(rule => {
+      // Normalize rule values for comparison
+      const normalizedRuleEquipment = this.normalizeEquipmentType(rule.equipmentType);
+      const normalizedRuleContainer = this.normalizeContainerSizeForMatching(rule.containerSize);
+
+      // Each parameter can be "auto-inherit" (matches anything) or a specific value
+      // FIXED: Compare normalized values instead of raw values
+      const matchesEquipment =
+        rule.equipmentType === 'auto-inherit' ||
+        normalizedRuleEquipment === normalizedRequestEquipment;
+
+      const matchesContainer =
+        rule.containerSize === 'auto-inherit' ||
+        normalizedRuleContainer === normalizedRequestContainer;
+
+      const matchesFrequency =
+        rule.frequency === 'auto-inherit' ||
+        rule.frequency === serviceRequest.frequency;
+
+      const matchesMaterial =
+        rule.materialType === 'auto-inherit' ||
+        rule.materialType === serviceRequest.materialType;
+
+      console.log('  🔎 Checking rule:', {
+        ruleId: rule.id,
+        ruleEquipment: rule.equipmentType,
+        normalizedRuleEquipment,
+        ruleContainer: rule.containerSize,
+        normalizedRuleContainer,
+        ruleFrequency: rule.frequency,
+        ruleMaterial: rule.materialType,
+        matchesEquipment,
+        matchesContainer,
+        matchesFrequency,
+        matchesMaterial,
+        MATCH: matchesEquipment && matchesContainer && matchesFrequency && matchesMaterial
+      });
+
+      return matchesEquipment && matchesContainer && matchesFrequency && matchesMaterial;
+    });
+
+    if (matchedRule) {
+      console.log('✅ GLOBAL RULE MATCHED:', {
+        ruleId: matchedRule.id,
+        equipmentType: matchedRule.equipmentType,
+        containerSize: matchedRule.containerSize,
+        frequency: matchedRule.frequency,
+        materialType: matchedRule.materialType,
+        isRollOffOrCompactor: matchedRule.isRollOffOrCompactor
+      });
+    } else {
+      console.log('❌ NO GLOBAL RULE MATCHED');
+    }
+
+    return matchedRule || null;
+  }
+
+  /**
+   * Find container-specific override within a Global Pricing Rule or pricing config
+   * Equipment Type is OPTIONAL in overrides - if blank, matches all equipment types
+   */
+private findContainerOverride(
+  serviceRequest: ServiceRequest,
+  containerSpecificPricing: ContainerSpecificOverride[]
+): ContainerSpecificOverride | undefined {
+  if (!containerSpecificPricing || containerSpecificPricing.length === 0) {
+    return undefined;
+  }
+
+  // Normalize the service request values for comparison
+  const normalizedRequestEquipment = this.normalizeEquipmentType(serviceRequest.equipmentType);
+  const normalizedRequestContainer = this.normalizeContainerSizeForMatching(serviceRequest.containerSize);
+
+  console.log('🔍 CONTAINER OVERRIDE SEARCH:', {
+    originalEquipment: serviceRequest.equipmentType,
+    normalizedEquipment: normalizedRequestEquipment,
+    originalContainer: serviceRequest.containerSize,
+    normalizedContainer: normalizedRequestContainer,
+    availableOverrides: containerSpecificPricing.length
+  });
+
+  const matchedOverride = containerSpecificPricing.find(override => {
+    // Normalize override values for comparison
+    const normalizedOverrideEquipment = override.equipmentType 
+      ? this.normalizeEquipmentType(override.equipmentType) 
+      : null;
+    const normalizedOverrideContainer = this.normalizeContainerSizeForMatching(override.containerSize);
+
+    // Equipment Type matching:
+    // - If blank/null/undefined → matches ANY equipment type
+    // - If specified → must match after normalization
+    const matchesEquipment = 
+      !normalizedOverrideEquipment || 
+      normalizedOverrideEquipment === normalizedRequestEquipment;
+    
+    // Container Size must match exactly after normalization (always required)
+    const matchesContainer = normalizedOverrideContainer === normalizedRequestContainer;
+    
+    console.log('  🔎 Checking override:', {
+      overrideEquipment: override.equipmentType,
+      normalizedOverrideEquipment,
+      overrideContainer: override.containerSize,
+      normalizedOverrideContainer,
+      pricePerYard: override.pricePerYard,
+      matchesEquipment,
+      matchesContainer,
+      MATCH: matchesEquipment && matchesContainer
+    });
+
+    return matchesEquipment && matchesContainer;
+  });
+
+  if (matchedOverride) {
+    console.log('✅ CONTAINER OVERRIDE MATCHED:', {
+      equipment: matchedOverride.equipmentType || 'Any Equipment',
+      containerSize: matchedOverride.containerSize,
+      pricePerYard: matchedOverride.pricePerYard
+    });
+  } else {
+    console.log('❌ NO CONTAINER OVERRIDE MATCHED');
+  }
+
+  return matchedOverride;
+}
+
+  /**
+   * Generate quote from pricing configuration
+   * Updated to support Global Pricing Rules hierarchy
+   */
+  private generateQuoteFromPricingConfig(
+    serviceRequest: ServiceRequest, 
+    cityFranchiseFee: number, 
+    citySalesTax: number
+  ): Quote {
+    console.log('⚙️ Generating quote from pricing configuration');
+
+    if (!this.pricingLogic?.pricingConfig) {
+      throw new Error('Pricing configuration not available');
+    }
+
+    const config = this.pricingLogic.pricingConfig;
+    const containerSizeNumber = this.extractContainerSizeNumber(serviceRequest.containerSize);
+    const serviceFrequency = getFrequencyMultiplier(serviceRequest.frequency);
+    
+    // MANDATORY PRICING CALCULATION SEQUENCE - Step 1
+    // Total Volume = (# of bins) × (Service Frequency) × (container size) × (4.33)
+    const totalMonthlyVolume = (serviceRequest.binQuantity || 1) * serviceFrequency * containerSizeNumber * 4.33;
+
+    // NEW: PRICING HIERARCHY WITH GLOBAL RULES
+    let pricePerYard: number;
+    let pricingSource: string;
+    let baseFees: {
+      fuelSurchargeRate: number;
+      franchiseFeeRate: number;
+      localTaxRate: number;
+      deliveryFee: number;
+      extraPickupRate: number;
+    };
+
+    // STEP 1: Try to find matching Global Pricing Rule
+    const matchingGlobalRule = this.findMatchingGlobalRule(
+      serviceRequest,
+      config.globalPricingRules || []
+    );
+
+    if (matchingGlobalRule) {
+      console.log('🎯 Found matching Global Pricing Rule:', {
+        ruleId: matchingGlobalRule.id,
+        serviceParams: {
+          equipmentType: matchingGlobalRule.equipmentType,
+          containerSize: matchingGlobalRule.containerSize,
+          frequency: matchingGlobalRule.frequency,
+          materialType: matchingGlobalRule.materialType
+        },
+        isRollOffOrCompactor: matchingGlobalRule.isRollOffOrCompactor
+      });
+
+      // CHECK: If this is a Roll-off or Compactor rule, use special pricing logic
+      if (matchingGlobalRule.isRollOffOrCompactor && matchingGlobalRule.rollOffPricing) {
+        console.log('🚛 Routing to Roll-off/Compactor pricing logic');
+        return this.generateRollOffCompactorQuote(
+          serviceRequest,
+          matchingGlobalRule,
+          cityFranchiseFee,
+          citySalesTax
+        );
+      }
+
+      // STEP 2: Within the matched rule, check for Container-Specific override
+      const containerOverride = this.findContainerOverride(
+        serviceRequest,
+        matchingGlobalRule.containerSpecificPricing || []
+      );
+
+      if (containerOverride) {
+        // PRIORITY 1: Container-Specific override within the rule
+        pricePerYard = containerOverride.pricePerYard;
+        pricingSource = `Global Rule (Container Override: ${containerOverride.equipmentType || 'Any Equipment'} + ${containerOverride.containerSize})`;
+        console.log('📦 Using container-specific override from Global Rule (PRIORITY 1):', {
+          equipmentType: containerOverride.equipmentType || 'Any Equipment',
+          containerSize: containerOverride.containerSize,
+          pricePerYard: containerOverride.pricePerYard
+        });
+      } else {
+        // PRIORITY 2: Rule's Small/Large Container pricing
+        const isSmallContainer = [2, 3, 4].includes(containerSizeNumber);
+        const isLargeContainer = [6, 8, 10].includes(containerSizeNumber);
+        const isOversizedContainer = containerSizeNumber >= 20; // 20YD, 30YD, 40YD, etc.
+
+        if (isSmallContainer) {
+          pricePerYard = matchingGlobalRule.smallContainerPricePerYard;
+          pricingSource = 'Global Rule (Small Container Price)';
+          console.log('🌐 Using Global Rule Small Container pricing (PRIORITY 2):', {
+            containerSizeNumber,
+            pricePerYard
+          });
+        } else if (isLargeContainer) {
+          pricePerYard = matchingGlobalRule.largeContainerPricePerYard;
+          pricingSource = 'Global Rule (Large Container Price)';
+          console.log('🌐 Using Global Rule Large Container pricing (PRIORITY 2):', {
+            containerSizeNumber,
+            pricePerYard
+          });
+        } else if (isOversizedContainer) {
+          // ✅ FIXED: Check if this is Roll-off/Compactor equipment before failing
+          const normalizedEquipment = this.normalizeEquipmentType(serviceRequest.equipmentType);
+
+          if (normalizedEquipment === 'Roll-off' || normalizedEquipment === 'Compactor') {
+            // This is Roll-off/Compactor but wasn't routed to specialized pricing
+            console.error('❌ ROLL-OFF/COMPACTOR PRICING CONFIGURATION MISSING:', {
+              containerSize: serviceRequest.containerSize,
+              containerSizeNumber,
+              equipmentType: serviceRequest.equipmentType,
+              normalizedEquipment,
+              message: 'Roll-off/Compactor equipment should use specialized pricing configuration, not container-specific pricing'
+            });
+
+            return this.createFailedQuote(
+              serviceRequest,
+              `Roll-off/Compactor pricing configuration is missing or incomplete. Please configure Roll-off pricing at Step 1: Choose Pricing Logic with Delivery Fee, Rental, Haul Rate, and Disposal Per Ton.`
+            );
+          }
+
+          // Standard oversized container (not Roll-off/Compactor)
+          console.error('❌ OVERSIZED CONTAINER WITHOUT SPECIFIC PRICING:', {
+            containerSize: serviceRequest.containerSize,
+            containerSizeNumber,
+            equipmentType: serviceRequest.equipmentType,
+            message: 'Oversized containers (20YD+) require container-specific pricing and should NOT default to large container price'
+          });
+
+          return this.createFailedQuote(
+            serviceRequest,
+            `Oversized container (${serviceRequest.containerSize}) requires container-specific pricing. Please configure pricing for this container size.`
+          );
+        } else {
+          // Unknown container size (not small, large, or oversized)
+          console.error('❌ UNKNOWN CONTAINER SIZE:', {
+            containerSize: serviceRequest.containerSize,
+            containerSizeNumber
+          });
+          
+          return this.createFailedQuote(
+            serviceRequest,
+            `Unknown container size (${serviceRequest.containerSize}). Please configure pricing for this container size.`
+          );
+        }
+      }
+
+      // ✅ FIXED: Calculate effective franchise fee with CITY PRIORITY
+      const effectiveFranchiseFee = cityFranchiseFee > 0
+        ? cityFranchiseFee  // City fee ALWAYS wins when it exists
+        : (matchingGlobalRule.franchiseFeePercent ?? config.franchiseFee ?? 0);
+
+      console.log('🏛️ Franchise fee priority resolution (FIXED):', {
+        cityFranchiseFee,
+        globalRuleFranchiseFee: matchingGlobalRule.franchiseFeePercent,
+        configFranchiseFee: config.franchiseFee,
+        effectiveFranchiseFee,
+        priorityUsed: cityFranchiseFee > 0 ? 'CITY (highest priority)' : 'Global Rule or Config',
+        city: serviceRequest.city,
+        state: serviceRequest.state
+      });
+
+      // Use fees from the Global Rule with CORRECTED franchise fee priority
+      baseFees = {
+        fuelSurchargeRate: matchingGlobalRule.fuelSurchargePercent ?? config.fuelSurcharge ?? 15,
+        franchiseFeeRate: effectiveFranchiseFee,  // ✅ Now correctly prioritizes city fees
+        localTaxRate: matchingGlobalRule.taxPercent ?? citySalesTax ?? config.tax ?? 8.25,
+        deliveryFee: matchingGlobalRule.deliveryFee ?? config.deliveryFee ?? 0,
+        extraPickupRate: matchingGlobalRule.extraPickupRate ?? config.extraPickupRate ?? 0
+      };
+
+    } else {
+      // NO MATCHING GLOBAL RULE - Fall back to default pricing config
+      console.log('🔄 No matching Global Rule, using default pricing config');
+
+      // Normalize service request values for consistent matching
+      const normalizedServiceEquipmentType = this.normalizeEquipmentType(serviceRequest.equipmentType);
+      const normalizedServiceContainerSize = normalizeContainerSize(serviceRequest.containerSize);
+
+      // Check for container-specific pricing rules in default config
+      const containerSpecificRule = config.containerSpecificPricingRules?.find(rule => {
+        const normalizedRuleEquipmentType = this.normalizeEquipmentType(rule.equipmentType);
+        const normalizedRuleContainerSize = normalizeContainerSize(rule.containerSize);
+        
+        return normalizedRuleContainerSize === normalizedServiceContainerSize &&
+          normalizedRuleEquipmentType === normalizedServiceEquipmentType;
+      });
+
+      if (this.isSingleLocation) {
+        // For single location workflow, use the single Price/YD value
+        pricePerYard = config.smallContainerPrice;
+        pricingSource = 'Default Config (Single Price/YD)';
+        console.log('🎯 Single location pricing applied:', {
+          pricePerYard: config.smallContainerPrice
+        });
+      } else if (containerSpecificRule && containerSpecificRule.pricePerYard) {
+        // Use container-specific rule from default config
+        pricePerYard = containerSpecificRule.pricePerYard;
+        pricingSource = 'Default Config (Container-Specific Rule)';
+        console.log('📦 Using container-specific pricing rule from default config:', {
+          containerSize: containerSpecificRule.containerSize,
+          equipmentType: containerSpecificRule.equipmentType,
+          pricePerYard: containerSpecificRule.pricePerYard
+        });
+      } else {
+        // Use Small/Large Container pricing from default config
+        const isSmallContainer = [2, 3, 4].includes(containerSizeNumber);
+        const isLargeContainer = [6, 8, 10].includes(containerSizeNumber);
+        const isOversizedContainer = containerSizeNumber >= 20; // 20YD, 30YD, 40YD, etc.
+        
+        if (isSmallContainer) {
+          pricePerYard = config.smallContainerPrice;
+          pricingSource = 'Default Config (Small Container Price)';
+          console.log('🌐 Using default Small Container pricing:', {
+            containerSizeNumber,
+            pricePerYard
+          });
+        } else if (isLargeContainer) {
+          pricePerYard = config.largeContainerPrice;
+          pricingSource = 'Default Config (Large Container Price)';
+          console.log('🌐 Using default Large Container pricing:', {
+            containerSizeNumber,
+            pricePerYard
+          });
+        } else if (isOversizedContainer) {
+          // ✅ FIXED: Check if this is Roll-off/Compactor equipment before failing
+          const normalizedEquipment = this.normalizeEquipmentType(serviceRequest.equipmentType);
+
+          if (normalizedEquipment === 'Roll-off' || normalizedEquipment === 'Compactor') {
+            // This is Roll-off/Compactor but wasn't routed to specialized pricing
+            console.error('❌ ROLL-OFF/COMPACTOR PRICING CONFIGURATION MISSING:', {
+              containerSize: serviceRequest.containerSize,
+              containerSizeNumber,
+              equipmentType: serviceRequest.equipmentType,
+              normalizedEquipment,
+              message: 'Roll-off/Compactor equipment should use specialized pricing configuration, not container-specific pricing'
+            });
+
+            return this.createFailedQuote(
+              serviceRequest,
+              `Roll-off/Compactor pricing configuration is missing or incomplete. Please configure Roll-off pricing at Step 1: Choose Pricing Logic with Delivery Fee, Rental, Haul Rate, and Disposal Per Ton.`
+            );
+          }
+
+          // Standard oversized container (not Roll-off/Compactor)
+          console.error('❌ OVERSIZED CONTAINER WITHOUT SPECIFIC PRICING:', {
+            containerSize: serviceRequest.containerSize,
+            containerSizeNumber,
+            equipmentType: serviceRequest.equipmentType,
+            message: 'Oversized containers (20YD+) require container-specific pricing and should NOT default to large container price'
+          });
+
+          return this.createFailedQuote(
+            serviceRequest,
+            `Oversized container (${serviceRequest.containerSize}) requires container-specific pricing. Please configure pricing for this container size.`
+          );
+        } else {
+          // Unknown container size (not small, large, or oversized)
+          console.error('❌ UNKNOWN CONTAINER SIZE:', {
+            containerSize: serviceRequest.containerSize,
+            containerSizeNumber
+          });
+          
+          return this.createFailedQuote(
+            serviceRequest,
+            `Unknown container size (${serviceRequest.containerSize}). Please configure pricing for this container size.`
+          );
+        }
+      }
+
+      // Use fees from default config with CITY PRIORITY for franchise fee
+      baseFees = {
+        fuelSurchargeRate: config.fuelSurcharge ?? 15,
+        franchiseFeeRate: cityFranchiseFee > 0 ? cityFranchiseFee : (config.franchiseFee ?? 0),
+        localTaxRate: citySalesTax > 0 ? citySalesTax : (config.tax ?? 8.25),
+        deliveryFee: config.deliveryFee ?? 0,
+        extraPickupRate: config.extraPickupRate ?? 0
+      };
+    }
+
+    // Validate that we have a valid price per yard
+    if (!pricePerYard || pricePerYard <= 0) {
+      console.error('❌ CRITICAL ERROR: No valid price per yard found!', {
+        pricePerYard,
+        hasGlobalRules: !!(config.globalPricingRules?.length),
+        hasContainerSpecificRules: !!(config.containerSpecificPricingRules?.length),
+        configSmallContainerPrice: config.smallContainerPrice,
+        configLargeContainerPrice: config.largeContainerPrice
+      });
+      
+      throw new Error(
+        `No pricing configured for ${serviceRequest.containerSize} ${serviceRequest.equipmentType}. ` +
+        `Please configure Global Pricing Rules, Container-Specific Pricing Rules, or Global Container Pricing.`
+      );
+    }
+
+    // MANDATORY PRICING CALCULATION SEQUENCE - Step 2
+    // Cost before tax and fees = (Total volume) × (price per yard)
+    const costBeforeTaxAndFees = totalMonthlyVolume * pricePerYard;
+    
+    // ✅ PHASE 3: Calculate additional fees with location filtering
+    const { totalCost: addOnsCost, breakdown: addOnDetails } = this.calculateAdditionalFeesWithDetails(
+      serviceRequest,
+      config.additionalFees || []
+    );
+
+    // MANDATORY PRICING CALCULATION SEQUENCE - Step 3
+    // Fuel Surcharge = (Cost before tax and fees) × Fuel Surcharge %
+    const fuelSurchargeAmount = costBeforeTaxAndFees * (baseFees.fuelSurchargeRate / 100);
+    
+    // MANDATORY PRICING CALCULATION SEQUENCE - Step 4
+    // Franchise Fee = (Cost before tax and fees + Additional Fees) × Franchise Fee %
+    const franchiseFeeAmount = (costBeforeTaxAndFees + addOnsCost) * (baseFees.franchiseFeeRate / 100);
+    
+    // MANDATORY PRICING CALCULATION SEQUENCE - Step 5
+    // Subtotal = Cost before tax and fees + Franchise Fee + Fuel Surcharge + Additional Fees
+    const subtotal = costBeforeTaxAndFees + franchiseFeeAmount + fuelSurchargeAmount + addOnsCost;
+    
+    // MANDATORY PRICING CALCULATION SEQUENCE - Step 6
+    // Tax = Subtotal × Tax %
+    const localTaxAmount = subtotal * (baseFees.localTaxRate / 100);
+    
+    // MANDATORY PRICING CALCULATION SEQUENCE - Step 7
+    // Final Total = Subtotal + Tax
+    const totalMonthlyCost = subtotal + localTaxAmount;
+
+    console.log('💰 Pricing calculation breakdown:', {
+      pricingSource,
+      totalMonthlyVolume,
+      pricePerYard,
+      costBeforeTaxAndFees,
+      fuelSurchargeAmount,
+      franchiseFeeAmount,
+      addOnsCost,
+      deliveryFee: baseFees.deliveryFee,
+      extraPickupRate: baseFees.extraPickupRate,
+      subtotal,
+      localTaxAmount,
+      totalMonthlyCost
+    });
+
+    return {
+      id: `quote-${serviceRequest.id}`,
+      serviceRequest,
+      matchedRate: null,
+      pricingSource,
+      baseRate: costBeforeTaxAndFees,
+      totalMonthlyVolume,
+      numberOfUnits: serviceRequest.binQuantity || 1,
+      pickupsPerWeek: serviceFrequency,
+      franchiseFeeAmount,
+      localTaxAmount,
+      fuelSurchargeAmount,
+      fuelSurchargeRate: baseFees.fuelSurchargeRate,
+      franchiseFeeRate: baseFees.franchiseFeeRate,
+      localTaxRate: baseFees.localTaxRate,
+      deliveryFee: baseFees.deliveryFee,
+      subtotal,
+      valueC: 0,
+      addOnsCost,
+      totalPrice: totalMonthlyCost,
+      totalMonthlyCost,
+      status: 'success',
+      extraPickupRate: baseFees.extraPickupRate,
+      addOnDetails: addOnDetails.length > 0 ? addOnDetails : undefined
+    };
+  }
+
+  /**
+   * ASYNC Generate quote for single location workflow
+   * Now async to support dynamic franchise fee loading
+   */
+  async generateQuote(request: ServiceRequest): Promise<Quote> {
+    console.log('💰 Generating quote for single location request:', request);
+
+    if (!this.pricingLogic) {
+      throw new Error('Pricing logic not configured');
+    }
+
+    // Get service area result for this location
+    const serviceAreaResult = this.serviceAreaData?.results.find(result =>
+      result.address === request.address && result.city === request.city
+    );
+
+    // ✅ FIX: Extract city-specific fees for ALL cities (not just franchised cities)
+    const safeCity = request.city || '';
+    const safeState = request.state || '';
+
+    console.log('🔍 Service request validation before franchise city matching:', {
+      originalCity: request.city,
+      originalState: request.state,
+      safeCity,
+      safeState,
+      hasValidCity: !!safeCity,
+      hasValidState: !!safeState
+    });
+
+    // ✅ CRITICAL FIX: Now using async matchFranchisedCity to load fees from CSV
+    const franchisedCityMatch = await matchFranchisedCity(safeCity, safeState);
+
+    // ✅ FIX: Extract the franchise fee and sales tax from the match result
+    const cityFranchiseFee = franchisedCityMatch.franchiseFee;
+    const citySalesTax = franchisedCityMatch.salesTax;
+
+    console.log('🏛️ City-specific fees extracted for pricing:', {
+      city: request.city,
+      cityFranchiseFee: `${cityFranchiseFee}%`,
+      citySalesTax: `${citySalesTax}%`,
+      hasMunicipalRates: !!franchisedCityMatch.pricingData,
+      isDallas: request.city.toLowerCase() === 'dallas',
+      isHouston: request.city.toLowerCase() === 'houston'
+    });
+
+    // Check for franchised city first (highest priority)
+    if (franchisedCityMatch.isMatch && franchisedCityMatch.pricingData) {
+      return this.generateFranchisedCityQuoteSynchronous(request, franchisedCityMatch, cityFranchiseFee, citySalesTax);
+    }
+
+    // Use regional pricing brain if available
+    if (this.pricingLogic.type === 'regional-brain' && this.regionalPricingData) {
+      return this.generateRegionalQuote(request, cityFranchiseFee, citySalesTax);
+    }
+
+    // ✅ FIX: Pass cityFranchiseFee and citySalesTax to custom quote
+    if (this.pricingLogic.type === 'custom') {
+      return this.generateCustomQuote(request, cityFranchiseFee, citySalesTax);
+    }
+
+    // ✅ FIX: Pass cityFranchiseFee and citySalesTax to broker quote
+    if (this.pricingLogic.type === 'broker' && this.pricingLogic.brokerRates) {
+      return this.generateBrokerQuote(request, cityFranchiseFee, citySalesTax);
+    }
+
+    throw new Error('No valid pricing method available');
+  }
+
+  /**
+   * ASYNC Generate quote for bulk workflow
+   */
+  async generateQuoteAsync(serviceRequest: ServiceRequest): Promise<Quote> {
     console.log('💰 Generating quote for service request:', {
       id: serviceRequest.id,
       customerName: serviceRequest.customerName,
@@ -89,7 +682,6 @@ export class PricingEngine {
 
     try {
       // STEP 1: Get city-specific franchise fee and sales tax for ALL cities
-      // Ensure city and state are valid strings before passing to matchFranchisedCity
       const safeCity = resolvedServiceRequest.city || '';
       const safeState = resolvedServiceRequest.state || '';
       
@@ -125,7 +717,7 @@ export class PricingEngine {
       // STEP 3: Process based on pricing logic type (with city-specific fees)
       switch (this.pricingLogic.type) {
         case 'regional-brain':
-          return this.generateRegionalBrainQuote(resolvedServiceRequest, cityFranchiseFee, citySalesTax);
+          return this.generateRegionalQuote(resolvedServiceRequest, cityFranchiseFee, citySalesTax);
         case 'custom':
           return this.generateCustomQuote(resolvedServiceRequest, cityFranchiseFee, citySalesTax);
         case 'broker':
@@ -143,11 +735,8 @@ export class PricingEngine {
    * Resolve auto-inherit values in a service request using the request's own data
    */
   private resolveAutoInheritValues(serviceRequest: ServiceRequest): ServiceRequest {
-    // Create a copy to avoid mutating the original
     const resolved = { ...serviceRequest };
 
-    // Auto-inherit values are resolved using the service request's own data
-    // This means 'auto-inherit' gets replaced with the actual values from this specific request
     if (resolved.equipmentType === 'auto-inherit') {
       resolved.equipmentType = serviceRequest.equipmentType || 'Front-Load Container';
     }
@@ -155,7 +744,7 @@ export class PricingEngine {
       resolved.containerSize = serviceRequest.containerSize || '8YD';
     }
     if (resolved.frequency === 'auto-inherit') {
-      resolved.frequency = serviceRequest.frequency || '1x/week';
+      resolved.frequency = serviceRequest.frequency;
     }
     if (resolved.materialType === 'auto-inherit') {
       resolved.materialType = serviceRequest.materialType || 'Solid Waste';
@@ -165,7 +754,7 @@ export class PricingEngine {
   }
 
   /**
-   * Generate quote using franchised city municipal pricing
+   * Generate quote using franchised city municipal pricing (ASYNC version for bulk workflow)
    */
   private async generateFranchisedCityQuote(serviceRequest: ServiceRequest, franchisedCityMatch: any, cityFranchiseFee: number, citySalesTax: number): Promise<Quote> {
     console.log('🏛️ Generating franchised city quote for:', franchisedCityMatch.cityName);
@@ -182,49 +771,58 @@ export class PricingEngine {
       throw new Error(`No municipal rate found for ${serviceRequest.containerSize} ${serviceRequest.equipmentType} with ${serviceRequest.frequency} frequency in ${franchisedCityMatch.cityName}`);
     }
 
-    // Calculate volume and pricing
     const containerSizeNumber = this.extractContainerSizeNumber(serviceRequest.containerSize);
     const serviceFrequency = getFrequencyMultiplier(serviceRequest.frequency);
-    
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 1
-    // Total Volume = (# of bins) × (Service Frequency) × (container size) × (4.33)
-    const totalMonthlyVolume = (serviceRequest.binQuantity || 1) * serviceFrequency * containerSizeNumber * 4.33;
 
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 2
-    // Cost before tax and fees = (Total volume) × (price per yard)
-    // For municipal rates, convert monthly rate to price per yard
+    const totalMonthlyVolume = (serviceRequest.binQuantity || 1) * serviceFrequency * containerSizeNumber * 4.33;
     const pricePerYard = rate.monthlyRate / (containerSizeNumber * serviceFrequency * 4.33);
     const costBeforeTaxAndFees = totalMonthlyVolume * pricePerYard;
-    
+
     const deliveryFee = rate.deliveryFee ?? this.pricingLogic?.pricingConfig?.deliveryFee ?? 0;
     const extraPickupRate = rate.extraPickupRate ?? this.pricingLogic?.pricingConfig?.extraPickupRate ?? 0;
 
-    // Additional fees
-    const addOnsCost = 0; // Municipal rates don't typically have additional fees
+    // Get supplementary costs for this franchised city
+    const supplementaryCosts = this.getSupplementaryCostsForCity(serviceRequest.city, serviceRequest.state);
 
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 3
-    // Fuel Surcharge = (Cost before tax and fees) × Fuel Surcharge %
+    // Calculate supplementary costs and create detailed breakdown
+    let addOnsCost = 0;
+    const addOnDetails: Array<{
+      category: string;
+      originalPrice: number;
+      originalFrequency: string;
+      monthlyEquivalent: number;
+    }> = [];
+
+    supplementaryCosts.forEach(cost => {
+      const monthlyEquivalent = this.convertFeeToMonthlyEquivalent(cost.amount, cost.frequency);
+      addOnsCost += monthlyEquivalent;
+      addOnDetails.push({
+        category: cost.category,
+        originalPrice: cost.amount,
+        originalFrequency: cost.frequency,
+        monthlyEquivalent
+      });
+    });
+
+    console.log('📋 Supplementary costs applied to quote:', {
+      city: serviceRequest.city,
+      supplementaryCostsCount: supplementaryCosts.length,
+      totalSupplementaryCost: addOnsCost,
+      breakdown: addOnDetails
+    });
+
     const fuelSurchargeRate = rate.fuelSurcharge ?? this.pricingLogic?.pricingConfig?.fuelSurcharge ?? 15;
     const fuelSurchargeAmount = costBeforeTaxAndFees * (fuelSurchargeRate / 100);
-    
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 4
-    // Franchise Fee = (Cost before tax and fees + Additional Fees) × Franchise Fee %
+
     const franchiseFeeRate = rate.franchiseFee ?? cityFranchiseFee ?? 0;
     const franchiseFeeAmount = (costBeforeTaxAndFees + addOnsCost) * (franchiseFeeRate / 100);
-    
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 5
-    // Subtotal = Cost before tax and fees + Franchise Fee + Fuel Surcharge + Additional Fees
+
     const subtotal = costBeforeTaxAndFees + franchiseFeeAmount + fuelSurchargeAmount + addOnsCost;
-    
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 6
-    // Tax = Subtotal × Tax %
+
     const localTaxRate = rate.salesTax ?? citySalesTax ?? 8.25;
     const localTaxAmount = subtotal * (localTaxRate / 100);
-    
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 7
-    // Final Total = Subtotal + Tax
+
     const totalMonthlyCost = subtotal + localTaxAmount;
-    
 
     console.log('🏛️ Franchised city pricing calculation breakdown:', {
       cityName: franchisedCityMatch.cityName,
@@ -237,16 +835,7 @@ export class PricingEngine {
       addOnsCost,
       subtotal,
       localTaxAmount,
-      totalMonthlyCost,
-      deliveryFee: `${deliveryFee} (included in monthly total)`,
-      extraPickupRate: `${extraPickupRate} (included in monthly total)`
-    });
-
-    console.log('🏛️ CORRECTED: One-time fees excluded from monthly calculation:', {
-      deliveryFee: `${deliveryFee} (one-time only)`,
-      extraPickupRate: `${extraPickupRate} (one-time only)`,
-      monthlyRecurringCost: totalMonthlyCost,
-      franchiseFeeCalculatedOn: costBeforeTaxAndFees + addOnsCost
+      totalMonthlyCost
     });
 
     return {
@@ -271,35 +860,149 @@ export class PricingEngine {
       totalPrice: totalMonthlyCost,
       totalMonthlyCost,
       status: 'success',
-      extraPickupRate
+      extraPickupRate,
+      addOnDetails: addOnDetails.length > 0 ? addOnDetails : undefined
+    };
+  }
+
+  /**
+   * Generate quote using franchised city municipal pricing (SYNCHRONOUS version for single location workflow)
+   */
+  private generateFranchisedCityQuoteSynchronous(serviceRequest: ServiceRequest, franchisedCityMatch: any, cityFranchiseFee: number, citySalesTax: number): Quote {
+    console.log('🏛️ Generating franchised city quote (sync) for:', franchisedCityMatch.cityName);
+
+    const rate = getFranchisedCityRate(
+      franchisedCityMatch.pricingData,
+      serviceRequest.containerSize,
+      serviceRequest.frequency,
+      serviceRequest.equipmentType,
+      serviceRequest.materialType
+    );
+
+    if (!rate) {
+      throw new Error(`No municipal rate found for ${serviceRequest.containerSize} ${serviceRequest.equipmentType} with ${serviceRequest.frequency} frequency in ${franchisedCityMatch.cityName}`);
+    }
+
+    const containerSizeNumber = this.extractContainerSizeNumber(serviceRequest.containerSize);
+    const serviceFrequency = getFrequencyMultiplier(serviceRequest.frequency);
+
+    const totalMonthlyVolume = (serviceRequest.binQuantity || 1) * serviceFrequency * containerSizeNumber * 4.33;
+    const pricePerYard = rate.monthlyRate / (containerSizeNumber * serviceFrequency * 4.33);
+    const costBeforeTaxAndFees = totalMonthlyVolume * pricePerYard;
+
+    const deliveryFee = rate.deliveryFee ?? this.pricingLogic?.pricingConfig?.deliveryFee ?? 0;
+    const extraPickupRate = rate.extraPickupRate ?? this.pricingLogic?.pricingConfig?.extraPickupRate ?? 0;
+
+    // Get supplementary costs for this franchised city
+    const supplementaryCosts = this.getSupplementaryCostsForCity(serviceRequest.city, serviceRequest.state);
+
+    // Calculate supplementary costs and create detailed breakdown
+    let addOnsCost = 0;
+    const addOnDetails: Array<{
+      category: string;
+      originalPrice: number;
+      originalFrequency: string;
+      monthlyEquivalent: number;
+    }> = [];
+
+    supplementaryCosts.forEach(cost => {
+      const monthlyEquivalent = this.convertFeeToMonthlyEquivalent(cost.amount, cost.frequency);
+      addOnsCost += monthlyEquivalent;
+      addOnDetails.push({
+        category: cost.category,
+        originalPrice: cost.amount,
+        originalFrequency: cost.frequency,
+        monthlyEquivalent
+      });
+    });
+
+    console.log('📋 Supplementary costs applied to quote (sync):', {
+      city: serviceRequest.city,
+      supplementaryCostsCount: supplementaryCosts.length,
+      totalSupplementaryCost: addOnsCost,
+      breakdown: addOnDetails
+    });
+
+    const fuelSurchargeRate = rate.fuelSurcharge ?? this.pricingLogic?.pricingConfig?.fuelSurcharge ?? 15;
+    const fuelSurchargeAmount = costBeforeTaxAndFees * (fuelSurchargeRate / 100);
+
+    const franchiseFeeRate = rate.franchiseFee ?? cityFranchiseFee ?? 0;
+    const franchiseFeeAmount = (costBeforeTaxAndFees + addOnsCost) * (franchiseFeeRate / 100);
+
+    const subtotal = costBeforeTaxAndFees + franchiseFeeAmount + fuelSurchargeAmount + addOnsCost;
+
+    const localTaxRate = rate.salesTax ?? citySalesTax ?? 8.25;
+    const localTaxAmount = subtotal * (localTaxRate / 100);
+
+    const totalMonthlyCost = subtotal + localTaxAmount;
+
+    console.log('🏛️ Franchised city pricing calculation breakdown (sync):', {
+      cityName: franchisedCityMatch.cityName,
+      municipalMonthlyRate: rate.monthlyRate,
+      pricePerYard,
+      totalMonthlyVolume,
+      costBeforeTaxAndFees,
+      fuelSurchargeAmount,
+      franchiseFeeAmount,
+      addOnsCost,
+      subtotal,
+      localTaxAmount,
+      totalMonthlyCost
+    });
+
+    return {
+      id: `quote-${serviceRequest.id}`,
+      serviceRequest,
+      matchedRate: rate,
+      pricingSource: `${franchisedCityMatch.cityName} Municipal Contract`,
+      baseRate: costBeforeTaxAndFees,
+      totalMonthlyVolume,
+      numberOfUnits: serviceRequest.binQuantity || 1,
+      pickupsPerWeek: serviceFrequency,
+      franchiseFeeAmount,
+      localTaxAmount,
+      fuelSurchargeAmount,
+      fuelSurchargeRate,
+      franchiseFeeRate,
+      localTaxRate,
+      deliveryFee,
+      subtotal,
+      valueC: 0,
+      addOnsCost,
+      totalPrice: totalMonthlyCost,
+      totalMonthlyCost,
+      status: 'success',
+      extraPickupRate,
+      addOnDetails: addOnDetails.length > 0 ? addOnDetails : undefined
     };
   }
 
   /**
    * Generate quote using regional pricing brain
    */
-  private generateRegionalBrainQuote(serviceRequest: ServiceRequest, cityFranchiseFee: number, citySalesTax: number): Quote {
+  private generateRegionalQuote(
+    serviceRequest: ServiceRequest,
+    cityFranchiseFee: number, 
+    citySalesTax: number
+  ): Quote {
     console.log('🧠 Generating regional brain quote');
 
     if (!this.pricingLogic?.regionalPricingData) {
       throw new Error('Regional pricing data not available');
     }
 
-    // Determine region based on service request location
     const region = this.determineRegion(serviceRequest.city, serviceRequest.state);
     
     if (!region) {
       throw new Error(`Cannot determine region for ${serviceRequest.city}, ${serviceRequest.state}`);
     }
 
-    // Find the appropriate rate sheet
     const rateSheet = this.pricingLogic.regionalPricingData.rateSheets.find(sheet => sheet.region === region);
     
     if (!rateSheet) {
       throw new Error(`No rate sheet found for region: ${region}`);
     }
 
-    // Find matching rate
     const matchingRate = rateSheet.rates.find(rate => 
       rate.containerSize === serviceRequest.containerSize && 
       rate.frequency === serviceRequest.frequency
@@ -309,48 +1012,29 @@ export class PricingEngine {
       throw new Error(`No rate found for ${serviceRequest.containerSize} with ${serviceRequest.frequency} frequency in ${region} region`);
     }
 
-    // Calculate volume and pricing
     const containerSizeNumber = this.extractContainerSizeNumber(serviceRequest.containerSize);
     const serviceFrequency = getFrequencyMultiplier(serviceRequest.frequency);
     
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 1
-    // Total Volume = (# of bins) × (Service Frequency) × (container size) × (4.33)
     const totalMonthlyVolume = (serviceRequest.binQuantity || 1) * serviceFrequency * containerSizeNumber * 4.33;
-
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 2
-    // Cost before tax and fees = (Total volume) × (price per yard)
-    const pricePerYard = matchingRate.price / (containerSizeNumber * 4.33); // Convert monthly rate to price per yard
+    const pricePerYard = matchingRate.price / (containerSizeNumber * 4.33);
     const costBeforeTaxAndFees = totalMonthlyVolume * pricePerYard;
     
     const deliveryFee = this.pricingLogic?.pricingConfig?.deliveryFee ?? 100;
     const extraPickupRate = this.pricingLogic?.pricingConfig?.extraPickupRate ?? 0;
+    const addOnsCost = 0;
 
-    // Additional fees
-    const addOnsCost = 0; // Regional brain doesn't typically have additional fees
-
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 3
-    // Fuel Surcharge = (Cost before tax and fees) × Fuel Surcharge %
     const fuelSurchargeRate = this.pricingLogic?.pricingConfig?.fuelSurcharge ?? 15;
     const fuelSurchargeAmount = costBeforeTaxAndFees * (fuelSurchargeRate / 100);
     
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 4
-    // Franchise Fee = (Cost before tax and fees + Additional Fees) × Franchise Fee %
     const franchiseFeeRate = cityFranchiseFee ?? 0;
     const franchiseFeeAmount = (costBeforeTaxAndFees + addOnsCost) * (franchiseFeeRate / 100);
     
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 5
-    // Subtotal = Cost before tax and fees + Franchise Fee + Fuel Surcharge + Additional Fees
     const subtotal = costBeforeTaxAndFees + franchiseFeeAmount + fuelSurchargeAmount + addOnsCost;
     
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 6
-    // Tax = Subtotal × Tax %
     const localTaxRate = citySalesTax ?? 8.25;
     const localTaxAmount = subtotal * (localTaxRate / 100);
     
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 7
-    // Final Total = Subtotal + Tax
     const totalMonthlyCost = subtotal + localTaxAmount;
-    
 
     console.log('🧠 Regional brain pricing calculation breakdown:', {
       region,
@@ -365,16 +1049,7 @@ export class PricingEngine {
       addOnsCost,
       subtotal,
       localTaxAmount,
-      totalMonthlyCost,
-      deliveryFee: `${deliveryFee} (included in monthly total)`,
-      extraPickupRate: `${extraPickupRate} (included in monthly total)`
-    });
-
-    console.log('🧠 CORRECTED: One-time fees excluded from monthly calculation:', {
-      deliveryFee: `${deliveryFee} (one-time only)`,
-      extraPickupRate: `${extraPickupRate} (one-time only)`,
-      monthlyRecurringCost: totalMonthlyCost,
-      franchiseFeeCalculatedOn: costBeforeTaxAndFees + addOnsCost
+      totalMonthlyCost
     });
 
     return {
@@ -413,14 +1088,12 @@ export class PricingEngine {
       throw new Error('No custom rules or pricing configuration available');
     }
 
-    // Try to find a matching custom rule first
     const matchingRule = this.findMatchingCustomRule(serviceRequest);
     
     if (matchingRule) {
       return this.generateQuoteFromCustomRule(serviceRequest, matchingRule, cityFranchiseFee, citySalesTax);
     }
 
-    // Fall back to pricing config if no custom rule matches
     if (this.pricingLogic.pricingConfig) {
       return this.generateQuoteFromPricingConfig(serviceRequest, cityFranchiseFee, citySalesTax);
     }
@@ -438,14 +1111,11 @@ export class PricingEngine {
       throw new Error('Broker rates not available');
     }
 
-    // Validate serviceRequest has required properties
     if (!serviceRequest.city || !serviceRequest.state) {
       throw new Error('Service request missing required city or state information');
     }
 
-    // Find matching broker rate
     const matchingRate = this.pricingLogic.brokerRates.find(rate => {
-      // Validate rate has required properties before comparison
       if (!rate.city || !rate.state) {
         console.warn('⚠️ Broker rate missing city or state:', rate);
         return false;
@@ -462,34 +1132,24 @@ export class PricingEngine {
       throw new Error(`No broker rate found for ${serviceRequest.city}, ${serviceRequest.state}`);
     }
 
-    // Calculate volume and pricing
     const containerSizeNumber = this.extractContainerSizeNumber(serviceRequest.containerSize);
     const serviceFrequency = getFrequencyMultiplier(serviceRequest.frequency);
     
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 1
-    // Total Volume = (# of bins) × (Service Frequency) × (container size) × (4.33)
     const totalMonthlyVolume = (serviceRequest.binQuantity || 1) * serviceFrequency * containerSizeNumber * 4.33;
-
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 2
-    // Cost before tax and fees = (Total volume) × (price per yard)
-    // For broker rates, use the base rate directly as cost before tax and fees
     const costBeforeTaxAndFees = matchingRate.baseRate * (serviceRequest.binQuantity || 1);
     
-    // Use broker rates if available, otherwise use city-specific fees
-    const franchiseFeeRate = matchingRate.franchiseFee ? 0 : cityFranchiseFee; // If broker has pre-calculated amount, rate is 0
+    const addOnsCost = 0;
+    const franchiseFeeRate = matchingRate.franchiseFee ? 0 : cityFranchiseFee;
     const franchiseFeeAmount = matchingRate.franchiseFee || ((costBeforeTaxAndFees + addOnsCost) * (franchiseFeeRate / 100));
     
-    const localTaxRate = matchingRate.localTax ? 0 : citySalesTax; // If broker has pre-calculated amount, rate is 0
-    const localTaxAmount = matchingRate.localTax || 0; // Will be recalculated below if needed
+    const localTaxRate = matchingRate.localTax ? 0 : citySalesTax;
     
     const fuelSurchargeRate = this.pricingLogic?.pricingConfig?.fuelSurcharge ?? 15;
     const fuelSurchargeAmount = matchingRate.fuelSurcharge || (costBeforeTaxAndFees * (fuelSurchargeRate / 100));
     
-    const addOnsCost = 0;
-    const deliveryFee = matchingRate.deliveryFee ?? this.pricingLogic?.pricingConfig?.deliveryFee ?? 0;
-    const extraPickupRate = matchingRate.extraPickupRate ?? this.pricingLogic?.pricingConfig?.extraPickupRate ?? 0;
+    const deliveryFee = (matchingRate as any).deliveryFee ?? this.pricingLogic?.pricingConfig?.deliveryFee ?? 0;
+    const extraPickupRate = (matchingRate as any).extraPickupRate ?? this.pricingLogic?.pricingConfig?.extraPickupRate ?? 0;
 
-    // Calculate subtotal and total
     const subtotal = costBeforeTaxAndFees + franchiseFeeAmount + fuelSurchargeAmount + addOnsCost + deliveryFee + extraPickupRate;
     const finalLocalTaxAmount = matchingRate.localTax || (subtotal * (localTaxRate / 100));
     const totalMonthlyCost = subtotal + finalLocalTaxAmount;
@@ -539,11 +1199,9 @@ export class PricingEngine {
   private findMatchingCustomRule(serviceRequest: ServiceRequest): CustomPricingRule | null {
     if (!this.pricingLogic?.customRules) return null;
 
-    // Normalize service request values for consistent matching
     const normalizedServiceEquipmentType = this.normalizeEquipmentType(serviceRequest.equipmentType);
     const normalizedServiceContainerSize = normalizeContainerSize(serviceRequest.containerSize);
 
-    // Resolve auto-inherit values in custom rules using the service request data
     const resolvedRules = this.pricingLogic.customRules.map(rule => this.resolveCustomRuleAutoInherit(rule, serviceRequest));
 
     return resolvedRules.find(rule => {
@@ -590,25 +1248,19 @@ export class PricingEngine {
     const containerSizeNumber = this.extractContainerSizeNumber(serviceRequest.containerSize);
     const serviceFrequency = getFrequencyMultiplier(serviceRequest.frequency);
     
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 1
-    // Total Volume = (# of bins) × (Service Frequency) × (container size) × (4.33)
     const totalMonthlyVolume = (serviceRequest.binQuantity || 1) * serviceFrequency * containerSizeNumber * 4.33;
 
-    // PRICING HIERARCHY IMPLEMENTATION
     let pricePerYard: number;
-    
-    // Check if this custom rule has its own pricePerYard (single location workflow)
+    const isSmallContainer = [2, 3, 4].includes(containerSizeNumber);
+    const isLargeContainer = [6, 8, 10].includes(containerSizeNumber);
+
     if (rule.pricePerYard && rule.pricePerYard > 0) {
-      // Single location workflow: use rule's specific price
-      const isSmallContainer = [2, 3, 4].includes(containerSizeNumber);
-      const isLargeContainer = [6, 8, 10].includes(containerSizeNumber);
-      
       if (isSmallContainer) {
         pricePerYard = rule.pricePerYard;
       } else if (isLargeContainer && rule.largeContainerPricePerYard) {
         pricePerYard = rule.largeContainerPricePerYard;
       } else {
-        pricePerYard = rule.pricePerYard; // Fallback to main price
+        pricePerYard = rule.pricePerYard;
       }
       
       console.log('🎯 Using custom rule specific pricing (single location):', {
@@ -616,10 +1268,8 @@ export class PricingEngine {
         source: 'Custom rule direct pricing'
       });
     } else {
-      // Bulk upload workflow: apply pricing hierarchy
       console.log('🎯 Applying bulk upload pricing hierarchy for custom rule');
       
-      // STEP 1: Check for container-specific pricing rules (HIGHEST PRIORITY)
       const normalizedServiceEquipmentType = this.normalizeEquipmentType(serviceRequest.equipmentType);
       const normalizedServiceContainerSize = normalizeContainerSize(serviceRequest.containerSize);
       
@@ -631,7 +1281,7 @@ export class PricingEngine {
           normalizedRuleEquipmentType === normalizedServiceEquipmentType;
       });
       
-      if (containerSpecificRule) {
+      if (containerSpecificRule && containerSpecificRule.pricePerYard) {
         pricePerYard = containerSpecificRule.pricePerYard;
         console.log('📦 Using container-specific pricing rule (PRIORITY 1):', {
           containerSize: containerSpecificRule.containerSize,
@@ -640,16 +1290,11 @@ export class PricingEngine {
           source: 'Container-specific rule'
         });
       } else {
-        // STEP 2: Fall back to global pricing (PRIORITY 2)
-        const isSmallContainer = [2, 3, 4].includes(containerSizeNumber);
-        const isLargeContainer = [6, 8, 10].includes(containerSizeNumber);
-        
         if (isSmallContainer) {
           pricePerYard = this.pricingLogic?.pricingConfig?.smallContainerPrice || 0;
         } else if (isLargeContainer) {
           pricePerYard = this.pricingLogic?.pricingConfig?.largeContainerPrice || 0;
         } else {
-          // For container sizes not in standard categories, default to large container pricing
           pricePerYard = this.pricingLogic?.pricingConfig?.largeContainerPrice || 0;
         }
         
@@ -663,40 +1308,24 @@ export class PricingEngine {
       }
     }
 
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 2
-    // Cost before tax and fees = (Total volume) × (price per yard)
     const costBeforeTaxAndFees = totalMonthlyVolume * pricePerYard;
     
     const deliveryFee = rule.deliveryFee ?? this.pricingLogic?.pricingConfig?.deliveryFee ?? 0;
     const extraPickupRate = rule.extraPickupRate ?? this.pricingLogic?.pricingConfig?.extraPickupRate ?? 0;
+    const addOnsCost = 0;
 
-    // Additional fees (if any)
-    const addOnsCost = 0; // Custom rules don't typically have additional fees
-
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 3
-    // Fuel Surcharge = (Cost before tax and fees) × Fuel Surcharge %
-    // Custom rule fees take priority, then city-specific fees, then defaults
     const franchiseFeeRate = rule.franchiseFee ?? cityFranchiseFee ?? 0;
     const fuelSurchargeRate = rule.fuelSurcharge ?? this.pricingLogic?.pricingConfig?.fuelSurcharge ?? 15;
     const fuelSurchargeAmount = costBeforeTaxAndFees * (fuelSurchargeRate / 100);
     
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 4
-    // Franchise Fee = (Cost before tax and fees + Additional Fees) × Franchise Fee %
     const franchiseFeeAmount = (costBeforeTaxAndFees + addOnsCost) * (franchiseFeeRate / 100);
     
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 5
-    // Subtotal = Cost before tax and fees + Franchise Fee + Fuel Surcharge + Additional Fees
     const subtotal = costBeforeTaxAndFees + franchiseFeeAmount + fuelSurchargeAmount + addOnsCost;
     
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 6
-    // Tax = Subtotal × Tax %
     const localTaxRate = rule.tax ?? citySalesTax ?? 8.25;
     const localTaxAmount = subtotal * (localTaxRate / 100);
     
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 7
-    // Final Total = Subtotal + Tax
     const totalMonthlyCost = subtotal + localTaxAmount;
-    
 
     console.log('💰 Custom rule pricing calculation breakdown:', {
       containerSizeNumber,
@@ -714,16 +1343,7 @@ export class PricingEngine {
       addOnsCost,
       subtotal,
       localTaxAmount,
-      totalMonthlyCost,
-      deliveryFee: `${deliveryFee} (included in monthly total)`,
-      extraPickupRate: `${extraPickupRate} (included in monthly total)`
-    });
-
-    console.log('💰 CORRECTED: One-time fees excluded from monthly calculation:', {
-      deliveryFee: `${deliveryFee} (one-time only)`,
-      extraPickupRate: `${extraPickupRate} (one-time only)`,
-      monthlyRecurringCost: totalMonthlyCost,
-      franchiseFeeCalculatedOn: costBeforeTaxAndFees + addOnsCost
+      totalMonthlyCost
     });
 
     return {
@@ -753,218 +1373,174 @@ export class PricingEngine {
   }
 
   /**
-   * Generate quote from pricing configuration
+   * Get supplementary costs for a specific city
    */
-  private generateQuoteFromPricingConfig(serviceRequest: ServiceRequest, cityFranchiseFee: number, citySalesTax: number): Quote {
-    console.log('⚙️ Generating quote from pricing configuration');
-
-    if (!this.pricingLogic?.pricingConfig) {
-      throw new Error('Pricing configuration not available');
+  private getSupplementaryCostsForCity(cityName: string, state: string): SupplementaryCost[] {
+    if (!this.pricingLogic?.franchisedCitySupplementary) {
+      return [];
     }
 
-    const config = this.pricingLogic.pricingConfig;
-    const containerSizeNumber = this.extractContainerSizeNumber(serviceRequest.containerSize);
-    const serviceFrequency = getFrequencyMultiplier(serviceRequest.frequency);
-    
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 1
-    // Total Volume = (# of bins) × (Service Frequency) × (container size) × (4.33)
-    const totalMonthlyVolume = (serviceRequest.binQuantity || 1) * serviceFrequency * containerSizeNumber * 4.33;
+    const key = `${cityName.toLowerCase()}, ${state.toLowerCase()}`;
+    const supplementaryPricing = this.pricingLogic.franchisedCitySupplementary[key];
 
-    // Normalize service request values for consistent matching
-    const normalizedServiceEquipmentType = this.normalizeEquipmentType(serviceRequest.equipmentType);
-    const normalizedServiceContainerSize = normalizeContainerSize(serviceRequest.containerSize);
-
-    // Check for container-specific pricing rules first
-    const containerSpecificRule = config.containerSpecificPricingRules?.find(rule => {
-      const normalizedRuleEquipmentType = this.normalizeEquipmentType(rule.equipmentType);
-      const normalizedRuleContainerSize = normalizeContainerSize(rule.containerSize);
-      
-      return normalizedRuleContainerSize === normalizedServiceContainerSize &&
-        normalizedRuleEquipmentType === normalizedServiceEquipmentType;
-    });
-
-    let pricePerYard: number;
-    
-    if (this.isSingleLocation) {
-      // For single location workflow, use the single Price/YD value (stored in smallContainerPrice)
-      pricePerYard = config.smallContainerPrice;
-      console.log('🎯 Single location pricing applied:', {
-        containerSize: serviceRequest.containerSize,
-        equipmentType: serviceRequest.equipmentType,
-        pricePerYard: config.smallContainerPrice,
-        source: 'Single Price/YD field'
-      });
-    } else if (containerSpecificRule) {
-      pricePerYard = containerSpecificRule.pricePerYard;
-      console.log('📦 Using container-specific pricing rule:', {
-        originalContainerSize: serviceRequest.containerSize,
-        normalizedContainerSize: normalizedServiceContainerSize,
-        matchedRuleContainerSize: containerSpecificRule.containerSize,
-        originalEquipmentType: serviceRequest.equipmentType,
-        normalizedEquipmentType: normalizedServiceEquipmentType,
-        matchedRuleEquipmentType: containerSpecificRule.equipmentType,
-        pricePerYard: containerSpecificRule.pricePerYard
-      });
-    } else {
-      // CONTAINER SIZE PRICING LOGIC - Use Small/Large Container Price/YD as fallback
-      // Small Containers: 2YD, 3YD, 4YD
-      // Large Containers: 6YD, 8YD, 10YD
-      const isSmallContainer = [2, 3, 4].includes(containerSizeNumber);
-      const isLargeContainer = [6, 8, 10].includes(containerSizeNumber);
-      
-      if (isSmallContainer) {
-        pricePerYard = config.smallContainerPrice;
-      } else if (isLargeContainer) {
-        pricePerYard = config.largeContainerPrice;
-      } else {
-        // For container sizes not in standard categories, default to large container pricing
-        pricePerYard = config.largeContainerPrice;
-      }
-      
-      console.log('🌐 Using global pricing:', {
-        originalContainerSize: serviceRequest.containerSize,
-        normalizedContainerSize: normalizedServiceContainerSize,
-        containerSizeNumber,
-        isSmallContainer,
-        isLargeContainer,
-        pricePerYard,
-        configSmallContainerPrice: config.smallContainerPrice,
-        configLargeContainerPrice: config.largeContainerPrice
-      });
-    }
-    
-    // CRITICAL FIX: Validate that we have a valid price per yard
-    if (!pricePerYard || pricePerYard <= 0) {
-      console.error('❌ CRITICAL ERROR: No valid price per yard found in pricing hierarchy!', {
-        pricePerYard,
-        hasCustomRulePrice: !!(rule.pricePerYard && rule.pricePerYard > 0),
-        hasContainerSpecificRules: !!(this.pricingLogic?.pricingConfig?.containerSpecificPricingRules?.length),
-        configSmallContainerPrice: this.pricingLogic?.pricingConfig?.smallContainerPrice,
-        configLargeContainerPrice: this.pricingLogic?.pricingConfig?.largeContainerPrice,
-        containerSizeNumber,
-        serviceRequest: {
-          containerSize: serviceRequest.containerSize,
-          equipmentType: serviceRequest.equipmentType
-        }
-      });
-      
-      if (rule.pricePerYard !== undefined) {
-        // Single location workflow
-        throw new Error(`No pricing configured for this service. Please configure the 'Price/YD' field in the custom rule.`);
-      } else {
-        // Bulk upload workflow
-        throw new Error(`No pricing configured for ${serviceRequest.containerSize} ${serviceRequest.equipmentType}. Please configure Container-Specific Pricing Rules or Global Container Pricing.`);
-      }
+    if (!supplementaryPricing || !supplementaryPricing.supplementaryCosts) {
+      return [];
     }
 
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 2
-    // Cost before tax and fees = (Total volume) × (price per yard)
-    const costBeforeTaxAndFees = totalMonthlyVolume * pricePerYard;
-    
-    const deliveryFee = config.deliveryFee ?? 0;
-    const extraPickupRate = config.extraPickupRate ?? 0;
-
-    // Calculate additional fees
-    const addOnsCost = this.calculateAdditionalFees(serviceRequest, config.additionalFees || []);
-
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 3
-    // Fuel Surcharge = (Cost before tax and fees) × Fuel Surcharge %
-    // Use city-specific fees instead of config defaults
-    const franchiseFeeRate = cityFranchiseFee ?? config.franchiseFee ?? 0;
-    const fuelSurchargeRate = config.fuelSurcharge ?? 15;
-    const fuelSurchargeAmount = costBeforeTaxAndFees * (fuelSurchargeRate / 100);
-    
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 4
-    // Franchise Fee = (Cost before tax and fees + Additional Fees) × Franchise Fee %
-    const franchiseFeeAmount = (costBeforeTaxAndFees + addOnsCost) * (franchiseFeeRate / 100);
-    
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 5
-    // Subtotal = Cost before tax and fees + Franchise Fee + Fuel Surcharge + Additional Fees
-    const subtotal = costBeforeTaxAndFees + franchiseFeeAmount + fuelSurchargeAmount + addOnsCost;
-    
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 6
-    // Tax = Subtotal × Tax %
-    const localTaxRate = citySalesTax ?? config.tax ?? 8.25;
-    const localTaxAmount = subtotal * (localTaxRate / 100);
-    
-    // MANDATORY PRICING CALCULATION SEQUENCE - Step 7
-    // Final Total = Subtotal + Tax
-    const totalMonthlyCost = subtotal + localTaxAmount;
-    
-
-    console.log('💰 Pricing calculation breakdown:', {
-      totalMonthlyVolume,
-      pricePerYard,
-      costBeforeTaxAndFees,
-      cityFranchiseFee: `${cityFranchiseFee}%`,
-      citySalesTax: `${citySalesTax}%`,
-      appliedFranchiseFeeRate: `${franchiseFeeRate}%`,
-      appliedLocalTaxRate: `${localTaxRate}%`,
-      fuelSurchargeAmount,
-      franchiseFeeAmount,
-      addOnsCost,
-      deliveryFee,
-      extraPickupRate,
-      subtotal,
-      localTaxAmount,
-      totalMonthlyCost
+    console.log('📋 Supplementary costs found for city:', {
+      city: cityName,
+      state,
+      costsCount: supplementaryPricing.supplementaryCosts.length,
+      costs: supplementaryPricing.supplementaryCosts.map(c => ({
+        category: c.category,
+        amount: c.amount,
+        frequency: c.frequency
+      }))
     });
 
-    console.log('💰 CORRECTED: One-time fees excluded from monthly calculation:', {
-      deliveryFee: `${deliveryFee} (one-time only)`,
-      extraPickupRate: `${extraPickupRate} (one-time only)`,
-      monthlyRecurringCost: totalMonthlyCost,
-      franchiseFeeCalculatedOn: costBeforeTaxAndFees + addOnsCost
-    });
-
-    return {
-      id: `quote-${serviceRequest.id}`,
-      serviceRequest,
-      matchedRate: null,
-      pricingSource: 'Pricing Configuration',
-      baseRate: costBeforeTaxAndFees,
-      totalMonthlyVolume,
-      numberOfUnits: serviceRequest.binQuantity || 1,
-      pickupsPerWeek: serviceFrequency,
-      franchiseFeeAmount,
-      localTaxAmount,
-      fuelSurchargeAmount,
-      fuelSurchargeRate,
-      franchiseFeeRate,
-      localTaxRate,
-      deliveryFee,
-      subtotal,
-      valueC: 0,
-      addOnsCost,
-      totalPrice: totalMonthlyCost,
-      totalMonthlyCost,
-      status: 'success',
-      extraPickupRate
-    };
+    return supplementaryPricing.supplementaryCosts;
   }
 
   /**
-   * Calculate additional fees for a service request
+   * ✅ PHASE 3: Calculate additional fees for a service request with location filtering
+   * Filters fees to include only:
+   * - Global fees (no locationId)
+   * - Location-specific fees matching this serviceRequest.id
    */
   private calculateAdditionalFees(serviceRequest: ServiceRequest, additionalFees: AdditionalFee[]): number {
     if (!additionalFees || additionalFees.length === 0) {
       return 0;
     }
 
+    // ✅ PHASE 3: Filter fees by location
+    const applicableFees = additionalFees.filter(fee => {
+      // Include fee if:
+      // 1. It has no locationId (global fee), OR
+      // 2. Its locationId matches this service request
+      const isApplicable = !fee.locationId || fee.locationId === serviceRequest.id;
+      
+      if (!isApplicable) {
+        console.log('  ⏭️ Skipping fee (location mismatch):', {
+          feeCategory: fee.category,
+          feeLocationId: fee.locationId,
+          serviceRequestId: serviceRequest.id
+        });
+      }
+      
+      return isApplicable;
+    });
+
+    console.log('💰 Additional fees filtering (Phase 3):', {
+      totalFeesConfigured: additionalFees.length,
+      applicableFeesForThisLocation: applicableFees.length,
+      serviceRequestId: serviceRequest.id,
+      serviceRequestAddress: `${serviceRequest.address}, ${serviceRequest.city}, ${serviceRequest.state}`,
+      feesBreakdown: applicableFees.map(f => ({
+        category: f.category,
+        price: f.price,
+        frequency: f.frequency,
+        locationSpecific: !!f.locationId,
+        locationDisplay: f.locationDisplay
+      }))
+    });
+
     let totalAdditionalFees = 0;
 
-    additionalFees.forEach(fee => {
-      // Convert fee to monthly equivalent
+    applicableFees.forEach(fee => {
       const monthlyEquivalent = this.convertFeeToMonthlyEquivalent(fee.price, fee.frequency);
       totalAdditionalFees += monthlyEquivalent;
     });
 
     console.log('💰 Additional fees calculated:', {
-      totalFees: additionalFees.length,
+      totalFees: applicableFees.length,
       totalMonthlyEquivalent: totalAdditionalFees
     });
 
     return totalAdditionalFees;
+  }
+
+  /**
+   * ✅ PHASE 3: Calculate additional fees with detailed breakdown and location filtering
+   * Filters fees to include only:
+   * - Global fees (no locationId)
+   * - Location-specific fees matching this serviceRequest.id
+   */
+  private calculateAdditionalFeesWithDetails(
+    serviceRequest: ServiceRequest,
+    additionalFees: AdditionalFee[]
+  ): {
+    totalCost: number;
+    breakdown: Array<{
+      category: string;
+      originalPrice: number;
+      originalFrequency: string;
+      monthlyEquivalent: number;
+      locationSpecific?: boolean;      // ✅ PHASE 3: New field
+      locationDisplay?: string;        // ✅ PHASE 3: New field
+    }>;
+  } {
+    if (!additionalFees || additionalFees.length === 0) {
+      return { totalCost: 0, breakdown: [] };
+    }
+
+    // ✅ PHASE 3: Filter fees by location
+    const applicableFees = additionalFees.filter(fee => {
+      // Include fee if:
+      // 1. It has no locationId (global fee), OR
+      // 2. Its locationId matches this service request
+      const isApplicable = !fee.locationId || fee.locationId === serviceRequest.id;
+      
+      if (!isApplicable) {
+        console.log('  ⏭️ Skipping fee (location mismatch):', {
+          feeCategory: fee.category,
+          feeLocationId: fee.locationId,
+          serviceRequestId: serviceRequest.id
+        });
+      }
+      
+      return isApplicable;
+    });
+
+    console.log('💰 Additional fees filtering with details (Phase 3):', {
+      totalFeesConfigured: additionalFees.length,
+      applicableFeesForThisLocation: applicableFees.length,
+      serviceRequestId: serviceRequest.id,
+      serviceRequestLocation: `${serviceRequest.address}, ${serviceRequest.city}, ${serviceRequest.state}`,
+      globalFees: applicableFees.filter(f => !f.locationId).length,
+      locationSpecificFees: applicableFees.filter(f => !!f.locationId).length
+    });
+
+    let totalCost = 0;
+    const breakdown: Array<{
+      category: string;
+      originalPrice: number;
+      originalFrequency: string;
+      monthlyEquivalent: number;
+      locationSpecific?: boolean;
+      locationDisplay?: string;
+    }> = [];
+
+    applicableFees.forEach(fee => {
+      const monthlyEquivalent = this.convertFeeToMonthlyEquivalent(fee.price, fee.frequency);
+      totalCost += monthlyEquivalent;
+
+      breakdown.push({
+        category: fee.category,
+        originalPrice: fee.price,
+        originalFrequency: fee.frequency,
+        monthlyEquivalent,
+        locationSpecific: !!fee.locationId,      // ✅ PHASE 3: Track if location-specific
+        locationDisplay: fee.locationDisplay     // ✅ PHASE 3: Include location info
+      });
+    });
+
+    console.log('💰 Additional fees calculated with details:', {
+      totalFees: applicableFees.length,
+      totalMonthlyEquivalent: totalCost,
+      breakdown
+    });
+
+    return { totalCost, breakdown };
   }
 
   /**
@@ -983,6 +1559,114 @@ export class PricingEngine {
   }
 
   /**
+   * Generate quote for Roll-off or Compactor equipment
+   * Uses special pricing structure with delivery, rental, haul, disposal, etc.
+   */
+  private generateRollOffCompactorQuote(
+    serviceRequest: ServiceRequest,
+    rule: GlobalPricingRule,
+    cityFranchiseFee: number,
+    citySalesTax: number
+  ): Quote {
+    console.log('🚛 Generating Roll-off/Compactor quote with pricing:', rule.rollOffPricing);
+
+    if (!rule.rollOffPricing) {
+      throw new Error('Roll-off pricing configuration is missing');
+    }
+
+    const rollOffPricing = rule.rollOffPricing;
+    const binQuantity = serviceRequest.binQuantity || 1;
+
+    // Calculate base costs
+    const deliveryFee = rollOffPricing.deliveryFee || 0;
+    const dailyRental = rollOffPricing.dailyRental || 0;
+    const monthlyRent = rollOffPricing.monthlyRent || 0;
+    const haulRate = rollOffPricing.haulRate || 0;
+    const disposalPerTon = rollOffPricing.disposalPerTon || 0;
+    const dryRun = rollOffPricing.dryRun || 0;
+    const deposit = rollOffPricing.deposit || 0;
+
+    // Calculate monthly rental cost (use whichever is provided)
+    // Daily rental is typically charged per day, so multiply by ~30 for monthly equivalent
+    const monthlyRentalCost = monthlyRent || (dailyRental * 30);
+
+    // Total monthly recurring cost
+    const monthlyRecurringCost = monthlyRentalCost * binQuantity;
+
+    // One-time costs
+    const oneTimeCosts = deliveryFee + (deposit || 0);
+
+    // Calculate franchise fee and tax
+    const franchiseFeeAmount = monthlyRecurringCost * (cityFranchiseFee / 100);
+    const localTaxAmount = (monthlyRecurringCost + franchiseFeeAmount) * (citySalesTax / 100);
+
+    // Total monthly cost includes recurring + franchise + tax
+    const totalMonthlyCost = monthlyRecurringCost + franchiseFeeAmount + localTaxAmount;
+
+    // Base rate for roll-off is the haul rate + disposal (per haul)
+    const baseRate = haulRate + disposalPerTon;
+
+    console.log('🚛 Roll-off Quote Calculation:', {
+      deliveryFee,
+      dailyRental,
+      monthlyRent,
+      monthlyRentalCost,
+      haulRate,
+      disposalPerTon,
+      baseRate,
+      dryRun,
+      deposit,
+      binQuantity,
+      monthlyRecurringCost,
+      franchiseFeeAmount,
+      localTaxAmount,
+      totalMonthlyCost
+    });
+
+    return {
+      id: `quote-${serviceRequest.id}`,
+      serviceRequest,
+      matchedRate: null,
+      pricingSource: 'Roll-off/Compactor Pricing',
+      baseRate,
+      totalMonthlyVolume: 0, // Not applicable for roll-off
+      numberOfUnits: binQuantity,
+      pickupsPerWeek: 0, // Not applicable for roll-off
+      franchiseFeeAmount,
+      localTaxAmount,
+      fuelSurchargeAmount: 0,
+      fuelSurchargeRate: 0,
+      franchiseFeeRate: cityFranchiseFee,
+      localTaxRate: citySalesTax,
+      deliveryFee,
+      subtotal: monthlyRecurringCost,
+      valueC: 0,
+      addOnsCost: 0,
+      totalPrice: totalMonthlyCost + oneTimeCosts,
+      totalMonthlyCost,
+      status: 'success',
+      isRollOffOrCompactor: true,
+      rollOffPricing: {
+        deliveryFee,
+        deliveryFeeNegotiable: rollOffPricing.deliveryFeeNegotiable,
+        dailyRental,
+        dailyRentalNegotiable: rollOffPricing.dailyRentalNegotiable,
+        monthlyRent,
+        monthlyRentNegotiable: rollOffPricing.monthlyRentNegotiable,
+        haulRate,
+        haulRateNegotiable: rollOffPricing.haulRateNegotiable,
+        disposalPerTon,
+        disposalPerTonNegotiable: rollOffPricing.disposalPerTonNegotiable,
+        dryRun,
+        dryRunNegotiable: rollOffPricing.dryRunNegotiable,
+        deposit,
+        depositNegotiable: rollOffPricing.depositNegotiable,
+        depositCities: rollOffPricing.depositCities
+      }
+    };
+  }
+
+  /**
    * Determine region based on city and state
    */
   private determineRegion(city: string, state: string): string | null {
@@ -993,13 +1677,10 @@ export class PricingEngine {
       return null;
     }
 
-    // NTX cities
     const ntxCities = ['dallas', 'fort worth', 'plano', 'garland', 'irving', 'grand prairie', 'mesquite', 'mckinney', 'carrollton', 'frisco', 'denton', 'richardson', 'lewisville', 'allen', 'flower mound', 'mansfield', 'euless', 'desoto', 'grapevine', 'bedford', 'haltom city', 'wylie', 'keller', 'coppell', 'duncanville', 'rockwall', 'farmers branch', 'rowlett', 'the colony', 'southlake', 'watauga', 'colleyville', 'corinth', 'highland village', 'lancaster', 'little elm', 'north richland hills', 'princeton', 'sachse', 'addison', 'cedar hill', 'glenn heights', 'murphy', 'prosper', 'red oak', 'seagoville', 'university park', 'weatherford', 'granbury', 'cresson', 'sherman', 'denison', 'gainesville', 'justin'];
 
-    // STX cities
     const stxCities = ['houston', 'corpus christi', 'pasadena', 'pearland', 'league city', 'sugar land', 'baytown', 'beaumont', 'missouri city', 'galveston', 'conroe', 'texas city', 'huntsville', 'lufkin', 'tyler', 'longview', 'texarkana', 'port arthur', 'orange', 'liberty', 'cleveland', 'dayton', 'tomball', 'jersey village', 'cypress', 'humble', 'katy', 'spring', 'channelview', 'la porte'];
 
-    // CTX cities
     const ctxCities = ['austin', 'san antonio', 'waco', 'killeen', 'temple', 'bryan', 'college station', 'round rock', 'cedar park', 'georgetown', 'pflugerville', 'leander', 'san marcos', 'new braunfels', 'kyle', 'buda', 'dripping springs', 'bee cave', 'lakeway', 'west lake hills', 'rollingwood', 'sunset valley', 'manchaca', 'del valle', 'elgin', 'manor', 'hutto', 'taylor', 'granger', 'jarrell', 'florence', 'liberty hill', 'bertram', 'burnet', 'marble falls', 'horseshoe bay', 'granite shoals', 'cottonwood shores', 'meadowlakes', 'spicewood', 'lockhart', 'luling', 'gonzales', 'nixon', 'smiley', 'waelder', 'flatonia', 'muldoon', 'schulenburg', 'weimar', 'columbus', 'eagle lake', 'wallis', 'orchard', 'east bernard', 'boling', 'wharton', 'hungerford', 'louise', 'blessing', 'midfield', 'matagorda', 'bay city', 'wadsworth', 'markham', 'van vleck', 'sweeny', 'west columbia', 'brazoria', 'angleton', 'lake jackson', 'clute', 'freeport', 'surfside beach', 'quintana', 'hearne', 'franklin', 'bremond', 'calvert', 'reagan', 'centerville', 'normangee', 'madisonville', 'midway', 'crockett', 'lovelady', 'grapeland', 'elkhart', 'palestine', 'davilla', 'rogers', 'buckholts', 'cameron', 'rockdale', 'thorndale', 'thrall', 'belton', 'seguin', 'boerne'];
 
     if (ntxCities.includes(cityLower)) {
@@ -1018,22 +1699,45 @@ export class PricingEngine {
    */
   private extractContainerSizeNumber(containerSize: string): number {
     const match = containerSize.match(/(\d+)/);
-    return match ? parseInt(match[1]) : 8; // Default to 8 if no number found
+    return match ? parseInt(match[1]) : 8;
+  }
+  
+/**
+ * Normalize container size for consistent matching
+ * Handles variations like "8YD", "8 YD", "8 Yard", "8 Yards", "8yd"
+ */
+private normalizeContainerSizeForMatching(containerSize: string): string {
+  if (!containerSize || typeof containerSize !== 'string') {
+    return '8YD'; // Default
   }
 
+  // Extract the numeric part
+  const match = containerSize.match(/(\d+)/);
+  if (!match) {
+    return '8YD'; // Default if no number found
+  }
+
+  const sizeNumber = match[1];
+  
+  // Return standardized format: "8YD"
+  return `${sizeNumber}YD`;
+}
+  
   /**
    * Normalize equipment type for consistent matching
+   * ENHANCED: Now handles all variations including "roll off" (with space)
    */
   private normalizeEquipmentType(equipmentType: string): string {
     if (!equipmentType || typeof equipmentType !== 'string') {
       return 'Front-Load Container';
     }
 
+    // Normalize to lowercase and trim whitespace
     const normalized = equipmentType.toLowerCase().trim();
-    
+
     // Front-Load Container variations
-    if (normalized.includes('front') || 
-        normalized.includes('dumpster') || 
+    if (normalized.includes('front') ||
+        normalized.includes('dumpster') ||
         normalized.includes('fl') ||
         normalized === 'container' ||
         normalized.includes('front-load') ||
@@ -1041,32 +1745,37 @@ export class PricingEngine {
         normalized === 'front load') {
       return 'Front-Load Container';
     }
-    
+
     // Cart variations
-    if (normalized.includes('cart') || 
-        normalized.includes('toter') || 
+    if (normalized.includes('cart') ||
+        normalized.includes('toter') ||
         normalized.includes('bin')) {
       return 'Cart';
     }
-    
-    // Roll-off variations
-    if (normalized.includes('roll') || 
-        normalized.includes('rolloff') || 
+
+    // Roll-off variations (ENHANCED: explicitly handle "roll off" with space)
+    if (normalized.includes('roll') ||
+        normalized.includes('rolloff') ||
         normalized.includes('roll-off') ||
+        normalized.includes('roll off') ||  // NEW: explicit handling
+        normalized === 'rolloff' ||
+        normalized === 'roll-off' ||
+        normalized === 'roll off' ||        // NEW: explicit handling
         normalized.includes('temporary') ||
         normalized.includes('temp')) {
       return 'Roll-off';
     }
-    
+
     // Compactor variations
-    if (normalized.includes('compactor') || 
+    if (normalized.includes('compactor') ||
         normalized.includes('compact')) {
       return 'Compactor';
     }
-    
-    // Default to Front-Load Container for unrecognized types
+
+    // Default fallback
     return 'Front-Load Container';
   }
+
   /**
    * Create a failed quote
    */
