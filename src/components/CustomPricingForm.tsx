@@ -37,7 +37,6 @@ export function CustomPricingForm({
   onPricingConfigUpdate,
   onApplyPricingConfig
 }: CustomPricingFormProps) {
-  // Ensure pricingConfig is always a valid object
   // Ensure pricingConfig is always a valid object, using a deep merge for initial values
   const pricingConfig = React.useMemo(() => {
     const config = rawPricingConfig ? { ...DEFAULT_PRICING_CONFIG, ...rawPricingConfig } : { ...DEFAULT_PRICING_CONFIG };
@@ -73,6 +72,18 @@ export function CustomPricingForm({
 
   // Initialize newRulePricePerYard with pricingConfig value
   const [newRulePricePerYard, setNewRulePricePerYard] = useState(pricingConfig.smallContainerPrice || 0);
+
+  // ✅ PHASE 2: Track if CSV contains add-ons
+  const hasAddOnsFromCSV = React.useMemo(() => {
+    if (!serviceAreaVerification?.results) return false;
+    return serviceAreaVerification.results.some(result => result.hasAddOnsFromCSV);
+  }, [serviceAreaVerification]);
+
+  // ✅ PHASE 2: Count locations with add-ons
+  const locationsWithAddOnsCount = React.useMemo(() => {
+    if (!serviceAreaVerification?.results) return 0;
+    return serviceAreaVerification.results.filter(result => result.hasAddOnsFromCSV).length;
+  }, [serviceAreaVerification]);
 
   // Synchronize newRulePricePerYard with pricingConfig.smallContainerPrice when it changes
   React.useEffect(() => {
@@ -283,6 +294,7 @@ export function CustomPricingForm({
       price: 0,
       frequency: 'one-time',
       assignedDivisions: []
+      // ✅ PHASE 2: locationId and locationDisplay are optional and will be set when user selects location
     }
     
     const updatedConfig = {
@@ -873,7 +885,7 @@ export function CustomPricingForm({
             )}
           </div>
 
-          {/* Additional Fees */}
+          {/* ✅ PHASE 2: Additional Fees Section with Location Dropdown */}
           <div className="bg-white border border-gray-200 rounded-lg p-6">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center">
@@ -881,7 +893,7 @@ export function CustomPricingForm({
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Additional Fees</h3>
                   <p className="text-gray-600 text-sm mt-1">
-                    Configure additional fees that apply to specific divisions or all locations
+                    Configure additional fees that apply globally or to specific locations
                   </p>
                 </div>
               </div>
@@ -894,6 +906,25 @@ export function CustomPricingForm({
               </button>
             </div>
 
+            {/* ✅ PHASE 2: Yellow Alert Banner */}
+            {hasAddOnsFromCSV && (
+              <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-yellow-700">
+                      <strong>Add-ons detected in your uploaded file!</strong> {locationsWithAddOnsCount} location{locationsWithAddOnsCount !== 1 ? 's' : ''} have add-ons specified. 
+                      You can assign additional fees to specific locations using the "Apply to Location" dropdown below.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {pricingConfig.additionalFees.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <Percent className="h-12 w-12 mx-auto mb-4 text-gray-300" />
@@ -904,7 +935,7 @@ export function CustomPricingForm({
               <div className="space-y-4">
                 {pricingConfig.additionalFees.map((fee) => (
                   <div key={fee.id} className="border border-gray-200 rounded-lg p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                           Fee Category
@@ -947,6 +978,47 @@ export function CustomPricingForm({
                         </select>
                       </div>
 
+                      {/* ✅ PHASE 2: Location Dropdown */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Apply to Location
+                        </label>
+                        <select
+                          value={fee.locationId || ''}
+                          onChange={(e) => {
+                            const selectedLocationId = e.target.value;
+                            if (selectedLocationId === '') {
+                              // Global fee - remove location info
+                              updateAdditionalFee(fee.id, 'locationId', undefined);
+                              updateAdditionalFee(fee.id, 'locationDisplay', undefined);
+                            } else {
+                              // Location-specific fee
+                              const selectedLocation = serviceAreaVerification?.results.find(
+                                result => result.id === selectedLocationId
+                              );
+                              updateAdditionalFee(fee.id, 'locationId', selectedLocationId);
+                              updateAdditionalFee(fee.id, 'locationDisplay', selectedLocation 
+                                ? `${selectedLocation.address}, ${selectedLocation.city}, ${selectedLocation.state}`
+                                : undefined
+                              );
+                            }
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="">All Locations (Global)</option>
+                          {serviceAreaVerification?.results.map((result) => (
+                            <option key={result.id} value={result.id}>
+                              {result.address}, {result.city}, {result.state}
+                            </option>
+                          ))}
+                        </select>
+                        {fee.locationDisplay && (
+                          <p className="mt-1 text-xs text-blue-600">
+                            📍 Location-specific: {fee.locationDisplay}
+                          </p>
+                        )}
+                      </div>
+
                       <div className="flex items-end">
                         <button
                           onClick={() => removeAdditionalFee(fee.id)}
@@ -959,7 +1031,7 @@ export function CustomPricingForm({
 
                     {!isFeeComplete(fee) && (
                       <div className="mt-2 text-sm text-red-600">
-                        Please complete all fields for this additional fee
+                        Please complete all required fields for this additional fee
                       </div>
                     )}
                   </div>
