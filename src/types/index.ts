@@ -1,16 +1,21 @@
-// Service Area Types
+// src/types/index.ts - COMPLETE FILE WITH ALL UPDATES
+
+/* ============================
+   Service Area Types
+   ============================ */
+
 export interface ServiceAreaResult {
   id: string;
   address: string;
   city: string;
   state: string;
   zipCode: string;
-  latitude?: number;
-  longitude?: number;
+  latitude?: number | null;
+  longitude?: number | null;
   status: 'serviceable' | 'not-serviceable' | 'manual-review';
   failureReason?: string;
   division?: string;
-  franchiseFee?: number;
+  franchiseFee?: number | null;
   companyName?: string;
   equipmentType?: string;
   containerSize?: string;
@@ -44,13 +49,82 @@ export interface ServiceBoundary {
   coordinates?: any; // GeoJSON polygon data
 }
 
-// Division and Container Types
+/* ============================
+   Container & Pricing Rules
+   ============================ */
+
 export interface ContainerSpecificPricingRule {
+  id: string;
   city?: string;
   state?: string;
+  containerSize: string;
   equipmentType: string;
   pricePerYard?: number;
   largeContainerPricePerYard?: number;
+}
+
+/**
+ * NEW: Container-specific pricing override within a Global Pricing Rule
+ * Equipment Type is OPTIONAL - if blank/null, it applies to ALL equipment types
+ */
+export interface ContainerSpecificOverride {
+  equipmentType?: string; // Optional: blank = matches all equipment types
+  containerSize: string;  // Required: specific container size (e.g., "2YD", "4YD")
+  pricePerYard: number;   // Required: override price per yard
+}
+
+/**
+ * Roll-off and Compactor specific pricing structure
+ */
+export interface RollOffPricing {
+  deliveryFee: number;
+  deliveryFeeNegotiable?: boolean;
+  dailyRental?: number;
+  dailyRentalNegotiable?: boolean;
+  monthlyRent?: number;
+  monthlyRentNegotiable?: boolean;
+  haulRate: number;
+  haulRateNegotiable?: boolean;
+  disposalPerTon: number;
+  disposalPerTonNegotiable?: boolean;
+  dryRun?: number;
+  dryRunNegotiable?: boolean;
+  deposit?: number;
+  depositNegotiable?: boolean;
+  depositCities?: string[];  // Cities where deposit applies
+}
+
+/**
+ * NEW: Global Pricing Rule for bulk upload workflow
+ * Each rule represents a specific service configuration with its own pricing
+ */
+export interface GlobalPricingRule {
+  id: string;
+  
+  // Service Parameters (can be "auto-inherit" or specific values)
+  equipmentType: string;      // e.g., "auto-inherit", "Front-Load", "Rear-Load", "Roll-off", "Compactor"
+  containerSize: string;      // e.g., "auto-inherit", "2YD", "4YD", "8YD"
+  frequency: string;          // e.g., "auto-inherit", "1x/week", "2x/week"
+  materialType: string;       // e.g., "auto-inherit", "Solid Waste", "Recycling"
+  
+  // Base Pricing (PRIORITY 2 - fallback when no container override exists)
+  // Optional for Roll-off/Compactor equipment
+  smallContainerPricePerYard?: number;  // For 2-4 YD containers
+  largeContainerPricePerYard?: number;  // For 6-10 YD containers
+  
+  // Fees
+  deliveryFee?: number;
+  fuelSurchargePercent?: number;
+  franchiseFeePercent?: number;
+  taxPercent?: number;
+  extraPickupRate?: number;
+  
+  // Container-Specific Overrides (PRIORITY 1 - highest priority)
+  containerSpecificPricing?: ContainerSpecificOverride[];
+  
+  // NEW: Roll-off/Compactor specific pricing
+  isRollOffOrCompactor?: boolean;
+  rollOffPricing?: RollOffPricing;
 }
 
 export interface DivisionData {
@@ -61,7 +135,10 @@ export interface DivisionData {
   containerSpecificPricingRules: ContainerSpecificPricingRule[];
 }
 
-// Rate and Service Types
+/* ============================
+   Rate & Quote Types
+   ============================ */
+
 export interface RateData {
   id: string;
   city: string;
@@ -78,7 +155,7 @@ export interface RateData {
 
 export interface ServiceRequest {
   id: string;
-  customerName: string;
+  customerName?: string;
   address: string;
   city: string;
   state: string;
@@ -92,12 +169,11 @@ export interface ServiceRequest {
   binQuantity?: number;
 }
 
-// Quote Types
 export interface Quote {
   id: string;
   serviceRequest: ServiceRequest;
   matchedRate: RateData | null;
-  pricingSource: 'Broker Upload' | 'Custom Division Logic' | 'Not Found';
+  pricingSource: string;
   baseRate: number;
   totalMonthlyVolume: number;
   numberOfUnits: number;
@@ -117,12 +193,17 @@ export interface Quote {
   status: 'success' | 'failed';
   failureReason?: string;
   notes?: string;
+  extraPickupRate?: number;
   addOnDetails?: Array<{
     category: string;
     originalPrice: number;
     originalFrequency: string;
     monthlyEquivalent: number;
   }>;
+  
+  // Roll-off/Compactor specific fields
+  isRollOffOrCompactor?: boolean;
+  rollOffPricing?: RollOffPricing;
 }
 
 export interface BulkProcessResult {
@@ -133,47 +214,72 @@ export interface BulkProcessResult {
   failedQuotes: Quote[];
 }
 
-// Pricing Types
+/* ============================
+   Custom Pricing Rules
+   ============================ */
+
 export interface CustomPricingRule {
   id: string;
+  city?: string;
+  state?: string;
   pricePerYard: number;
+  largeContainerPricePerYard?: number;
   frequency: string;
   containerSize: string;
   deliveryFee?: number;
   fuelSurcharge?: number;
-  franchiseFee: number;
-  tax: number;
-  pricePerYardAddon: number;
+  franchiseFee?: number;
+  tax?: number;
+  extraPickupRate?: number;
+  pricePerYardAddon?: number;
   equipmentType: string;
   materialType: string;
-  assignedDivisions: string[];
+  assignedDivisions?: string[];
   excludeTaxesAndFees?: boolean;
   taxExempt?: boolean;
   specificDivisionPricing?: boolean;
   specificDivision?: string;
 }
 
+/**
+ * UPDATED: Additional Fee with location-specific support for bulk uploads
+ * New fields allow fees to be applied to specific locations during bulk upload workflow
+ */
 export interface AdditionalFee {
   id: string;
   category: string;
   price: number;
-  frequency: string;
-  assignedDivisions: string[];
+  frequency: 'one-time' | 'weekly' | 'monthly' | 'quarterly' | 'annually';
+  
+  // ✅ NEW FIELDS for bulk upload location-specific fees (Phase 1)
+  locationId?: string;        // Optional: References ServiceAreaResult.id for location-specific fees
+  locationDisplay?: string;   // Optional: Human-readable location (e.g., "Chipotle - 190 W Bitters Rd, San Antonio, TX")
 }
 
+/**
+ * UPDATED: Pricing Configuration with Global Pricing Rules support
+ */
 export interface PricingConfig {
-  smallContainerPrice: number; // 2/3/4 YD
-  largeContainerPrice: number; // 6/8/10 YD
-  Frequency: string;
-  frequencyDiscounts: {
-    twoThreeTimesWeek: number; // percentage
-    fourTimesWeek: number; // percentage
-  };
-  franchiseFee: number; // percentage
-  tax: number; // percentage
+  smallContainerPrice: number;
+  largeContainerPrice: number;
+  defaultEquipmentType?: string;
+  defaultContainerSize?: string;
+  defaultFrequency?: string;
+  defaultMaterialType?: string;
+  franchiseFee: number;
+  tax: number;
   deliveryFee: number;
-  fuelSurcharge: number; // percentage
+  fuelSurcharge: number;
+  extraPickupRate: number;
+  frequencyDiscounts?: {
+    twoThreeTimesWeek?: number;
+    fourTimesWeek?: number;
+  };
+  containerSpecificPricingRules: ContainerSpecificPricingRule[];
   additionalFees: AdditionalFee[];
+  
+  // NEW FIELD: Array of global pricing rules for bulk upload
+  globalPricingRules?: GlobalPricingRule[];
 }
 
 export interface PricingLogic {
@@ -186,7 +292,10 @@ export interface PricingLogic {
   franchisedCitySupplementary?: Record<string, FranchisedCitySupplementaryPricing>;
 }
 
-// Regional Pricing Types
+/* ============================
+   Regional Pricing
+   ============================ */
+
 export interface RegionalRateEntry {
   containerSize: string;
   frequency: string;
@@ -205,7 +314,10 @@ export interface RegionalPricingData {
   source?: string;
 }
 
-// Franchised City Types
+/* ============================
+   Franchised City Pricing
+   ============================ */
+
 export interface FranchisedCityRate {
   id: string;
   city: string;
@@ -215,13 +327,15 @@ export interface FranchisedCityRate {
   equipmentType: string;
   monthlyRate: number;
   deliveryFee: number;
-  franchiseFee: number; // percentage
-  salesTax: number; // percentage
+  franchiseFee: number;
+  salesTax: number;
   extraPickupRate?: number;
   compactorRate?: number;
   enclosureRate?: number;
   casterRate?: number;
   lockRate?: number;
+  fuelSurcharge?: number;
+  materialType?: string;
 }
 
 export interface FranchisedCityPricing {
@@ -232,7 +346,6 @@ export interface FranchisedCityPricing {
   sourceFile: string;
 }
 
-// Supplementary Pricing Types
 export interface SupplementaryCost {
   id: string;
   category: string;
@@ -252,7 +365,10 @@ export interface FranchisedCitySupplementaryPricing {
   lastUpdated: string;
 }
 
-// Override Types
+/* ============================
+   Price Overrides
+   ============================ */
+
 export interface PriceOverride {
   id: string;
   quoteId: string;
@@ -277,15 +393,4 @@ export interface FranchisedCityOverride {
   overriddenBy: string;
   overriddenAt: string;
   isActive: boolean;
-}
-
-// Component Props Types
-export interface ServiceAreaVerificationProps {
-  category: 'Lockbar' | 'Caster' | 'Other' | '';
-  customName?: string;
-  onVerificationComplete: (verification: ServiceAreaVerificationData) => void;
-  onContinue?: () => void;
-  frequency: 'one-time' | 'weekly' | 'monthly' | 'quarterly' | 'annually' | 'per-service-frequency';
-  description?: string;
-  onFileNameUpdate: (fileName: string) => void;
 }
